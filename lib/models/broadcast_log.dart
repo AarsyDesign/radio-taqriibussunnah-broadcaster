@@ -11,6 +11,12 @@ class BroadcastLog {
     required this.totalUploadBytes,
     required this.reconnectCount,
     required this.finalStatus,
+    this.ustadzName = '',
+    this.kajianTitle = '',
+    this.kajianTheme = '',
+    this.liveMetadata = '',
+    this.recordingFilePath = '',
+    this.recordingBytes = 0,
   });
 
   final String id;
@@ -20,9 +26,16 @@ class BroadcastLog {
   final int totalUploadBytes;
   final int reconnectCount;
   final ConnectionStatus finalStatus;
+  final String ustadzName;
+  final String kajianTitle;
+  final String kajianTheme;
+  final String liveMetadata;
+  final String recordingFilePath;
+  final int recordingBytes;
 
   Duration get duration => Duration(seconds: durationSeconds);
   double get totalUploadMb => totalUploadBytes / 1024 / 1024;
+  double get recordingMb => recordingBytes / 1024 / 1024;
 
   Map<String, dynamic> toMap() {
     return {
@@ -33,6 +46,12 @@ class BroadcastLog {
       'totalUploadBytes': totalUploadBytes,
       'reconnectCount': reconnectCount,
       'finalStatus': finalStatus.name,
+      'ustadzName': ustadzName,
+      'kajianTitle': kajianTitle,
+      'kajianTheme': kajianTheme,
+      'liveMetadata': liveMetadata,
+      'recordingFilePath': recordingFilePath,
+      'recordingBytes': recordingBytes,
     };
   }
 
@@ -50,6 +69,12 @@ class BroadcastLog {
         (status) => status.name == map['finalStatus'],
         orElse: () => ConnectionStatus.stopped,
       ),
+      ustadzName: map['ustadzName'] as String? ?? '',
+      kajianTitle: map['kajianTitle'] as String? ?? '',
+      kajianTheme: map['kajianTheme'] as String? ?? '',
+      liveMetadata: map['liveMetadata'] as String? ?? '',
+      recordingFilePath: map['recordingFilePath'] as String? ?? '',
+      recordingBytes: (map['recordingBytes'] as num?)?.toInt() ?? 0,
     );
   }
 

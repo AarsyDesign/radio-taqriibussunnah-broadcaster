@@ -1,6 +1,6 @@
 # Radio Taqriibussunnah Broadcaster
 
-Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini fokus pada UI Flutter, konfigurasi permanen, permission microphone, network info, log lokal, native Android Foreground Service, audio capture microphone, encoder AAC-LC, dan koneksi dasar Icecast/AzuraCast.
+Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini fokus pada UI Flutter, konfigurasi permanen lokal, permission microphone, network info, log lokal, native Android Foreground Service, audio capture microphone, encoder AAC-LC, dan koneksi dasar SHOUTcast serta Icecast/AzuraCast.
 
 ## Status Saat Ini
 
@@ -19,10 +19,11 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 - Audio level real dikirim dari Kotlin ke Flutter melalui EventChannel.
 - Native encoder AAC-LC berbasis `MediaCodec` sudah tersedia.
 - Bitrate encoder mengikuti pilihan Setup: 64/96/128 kbps.
-- Native TCP client Icecast/AzuraCast sudah tersedia.
+- Native TCP client SHOUTcast dan Icecast/AzuraCast sudah tersedia.
 - Output AAC encoder sudah dikirim ke server melalui socket.
 - Handling dasar tersedia untuk authentication failed, server unreachable, reconnecting, dan connection dropped.
 - Monitoring upload/reconnect/log real sudah tersambung dari native Android.
+- Rekaman lokal WAV otomatis tersimpan saat broadcast berjalan.
 
 ## Package Utama
 
@@ -46,9 +47,12 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 - Input host/server.
 - Input port.
-- Input mount point.
+- Pilihan tipe server:
+  - SHOUTcast
+  - Icecast/AzuraCast
+- Input mount point atau stream ID.
 - Input username DJ.
-- Input password DJ.
+- Input password DJ atau source password SHOUTcast.
 - Dropdown bitrate:
   - 64 kbps
   - 96 kbps
@@ -58,28 +62,29 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
   - USB Audio Interface
 - Tombol Tes Koneksi.
 - Tombol Simpan untuk menyimpan konfigurasi permanen.
-- Hasil test connection dummy:
+- Hasil test connection native:
   - success
   - authentication failed
   - server unreachable
+  - timeout
+  - invalid config
+  - protocol rejected
+  - unsupported codec
 - Validasi form:
   - host wajib diisi
   - port wajib angka
-  - mount point wajib diisi
-  - username wajib diisi
+  - mount point wajib diisi untuk Icecast/AzuraCast
+  - username wajib diisi untuk Icecast/AzuraCast
   - password wajib diisi
 
-Catatan dummy test:
-- Host berisi `down` atau `offline` menghasilkan `server unreachable`.
-- Username berisi `fail` atau password `salah` menghasilkan `authentication failed`.
-- Selain itu menghasilkan `success`.
+Tes koneksi membuka socket native, menjalankan handshake sesuai tipe server, lalu menutup koneksi tanpa mengirim audio.
 
 Default server awal:
 
 - host/IP: `151.245.85.182`
 - port: `8005`
-- mount point: `/listen/radio/radio.mp3`
-- listener URL: `https://radio.mahadtaqriibussunnah.my.id/listen/radio/radio.mp3`
+- tipe server: `SHOUTcast`
+- listener URL lama: `https://radio.mahadtaqriibussunnah.my.id/listen/radio/radio.mp3`
 
 ## Halaman Live
 
@@ -103,6 +108,7 @@ Default server awal:
   - estimasi data per jam
   - jenis jaringan
   - jumlah reconnect
+  - ukuran dan nama file rekaman lokal
 - Tombol besar Mulai Siaran.
 - Saat live, tombol berubah menjadi Stop Siaran.
 - Saat stop ditekan, muncul dialog konfirmasi.
@@ -197,15 +203,17 @@ lib/models/broadcast_log.dart
   - username
   - bitrate
   - input audio
+  - tipe server
   - log dummy lokal sebagai JSON list
 - `FlutterSecureStorage` menyimpan:
   - password DJ
 
 Password DJ tidak disimpan di `SharedPreferences`.
+Konfigurasi yang disimpan bersifat lokal per perangkat operator. Jika aplikasi dipasang di HP lain, perangkat itu perlu konfigurasi sendiri kecuali default config dibundel di aplikasi atau diambil dari backend.
 
 ## Native Android
 
-Tahap native saat ini sudah memiliki service, audio capture, encoder, dan koneksi dasar Icecast/AzuraCast.
+Tahap native saat ini sudah memiliki service, audio capture, encoder, dan koneksi dasar SHOUTcast serta Icecast/AzuraCast.
 
 MethodChannel:
 
@@ -235,16 +243,19 @@ EventChannel audio level mengirim nilai:
 - menampilkan notifikasi "Kajian live sedang berjalan"
 - mengirim status dummy `connecting` lalu `live`
 - menangkap input microphone dengan `AudioRecord`
+- merekam input audio lokal ke file WAV dari buffer `AudioRecord`
 - menghitung level audio real
 - encode audio PCM ke AAC-LC menggunakan `MediaCodec`
 - memakai bitrate 64/96/128 kbps dari konfigurasi Flutter
 - konek ke Icecast/AzuraCast lewat TCP socket
+- konek ke SHOUTcast v1 lewat source password dan metadata `icy-*`
 - mengirim AAC ADTS frame ke server
 - menangani authentication failed
 - menangani server unreachable
 - melakukan reconnect dasar saat koneksi putus
 - mengirim level audio ke Flutter
 - mengirim total upload, kecepatan upload, rata-rata upload, dan jumlah reconnect ke Flutter
+- mengirim path dan ukuran file rekaman ke Flutter
 - mengirim pesan log native ke Flutter
 - mengirim `stopped` saat service dihentikan
 

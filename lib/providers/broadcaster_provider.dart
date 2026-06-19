@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart';
 import '../models/broadcast_log.dart';
 import '../models/broadcaster_config.dart';
 import '../models/connection_status.dart';
+import '../models/live_metadata.dart';
 import '../services/broadcast_log_storage_service.dart';
 import '../services/config_storage_service.dart';
-import '../services/connection_test_service.dart';
 import '../services/microphone_permission_service.dart';
 import '../services/native_broadcast_service.dart';
 import '../services/network_info_service.dart';
@@ -24,14 +24,11 @@ class BroadcasterProvider extends ChangeNotifier {
   BroadcasterProvider({
     ConfigStorageService? configStorageService,
     BroadcastLogStorageService? logStorageService,
-    ConnectionTestService? connectionTestService,
     MicrophonePermissionService? microphonePermissionService,
     NativeBroadcastService? nativeBroadcastService,
     NetworkInfoService? networkInfoService,
   }) : _configStorageService = configStorageService ?? ConfigStorageService(),
        _logStorageService = logStorageService ?? BroadcastLogStorageService(),
-       _connectionTestService =
-           connectionTestService ?? ConnectionTestService(),
        _microphonePermissionService =
            microphonePermissionService ?? MicrophonePermissionService(),
        _nativeBroadcastService =
@@ -56,7 +53,6 @@ class BroadcasterProvider extends ChangeNotifier {
 
   final ConfigStorageService _configStorageService;
   final BroadcastLogStorageService _logStorageService;
-  final ConnectionTestService _connectionTestService;
   final MicrophonePermissionService _microphonePermissionService;
   final NativeBroadcastService _nativeBroadcastService;
   final NetworkInfoService _networkInfoService;
@@ -76,7 +72,7 @@ class BroadcasterProvider extends ChangeNotifier {
 
   BroadcasterConfig config = BroadcasterConfig.empty;
   ConnectionStatus status = ConnectionStatus.offline;
-  TestConnectionResult testResult = TestConnectionResult.idle;
+  ConnectionStatus testResultStatus = ConnectionStatus.offline;
 
   bool isLoading = true;
   Duration duration = Duration.zero;
@@ -86,6 +82,12 @@ class BroadcasterProvider extends ChangeNotifier {
   double averageUploadKbps = 0;
   String networkType = 'Unknown';
   int reconnectCount = 0;
+  String recordingFilePath = '';
+  int recordingBytes = 0;
+  String ustadzName = '';
+  String kajianTitle = '';
+  String kajianTheme = '';
+  String liveMetadata = liveMetadataFallback;
   List<BroadcastLog> logs = [];
 
   String get host => config.host;
@@ -95,7 +97,9 @@ class BroadcasterProvider extends ChangeNotifier {
   String get djPassword => config.password;
   int get bitrate => config.bitrate;
   String get audioInput => config.audioInput;
+  String get serverType => config.serverType;
   double get totalUploadMb => totalUploadBytes / 1024 / 1024;
+  double get recordingMb => recordingBytes / 1024 / 1024;
 
   bool get isLive => status == ConnectionStatus.live;
   bool get isBusy =>
@@ -103,9 +107,18 @@ class BroadcasterProvider extends ChangeNotifier {
       status == ConnectionStatus.reconnecting;
   bool get hasCompleteConfig => config.isComplete;
 
-  double get estimatedDataPerHourMb => averageUploadKbps <= 0
-      ? bitrate * 0.45
-      : averageUploadKbps * 1000 / 8 * 3600 / 1024 / 1024;
+  double get estimatedDataPerHourMb {
+    if (averageUploadKbps > 0) {
+      return averageUploadKbps * 1000 / 8 * 3600 / 1024 / 1024;
+    }
+    return switch (bitrate) {
+      32 => 15,
+      64 => 30,
+      96 => 45,
+      128 => 60,
+      _ => bitrate * 0.47,
+    };
+  }
 
   Future<void> loadStartupData() async {
     isLoading = true;
@@ -136,15 +149,63 @@ class BroadcasterProvider extends ChangeNotifier {
 
   List<String> validateSetupConfig(BroadcasterConfig candidate) {
     final errors = <String>[];
-    if (candidate.host.trim().isEmpty) errors.add('Host wajib diisi');
+    final host = candidate.host.trim();
+    final mount = candidate.mountPoint.trim();
+
+    if (host.isEmpty) errors.add('Host wajib diisi');
+    if (host.startsWith('http://') || host.startsWith('https://')) {
+      errors.add(
+        'Ini terlihat seperti URL pendengar. Untuk broadcast, gunakan data source/DJ connection dari AzuraCast.',
+      );
+    }
     if (candidate.port < 1 || candidate.port > 65535) {
-      errors.add('Port wajib angka');
+      errors.add('Port wajib angka 1-65535');
     }
-    if (candidate.mountPoint.trim().isEmpty) {
-      errors.add('Mount point wajib diisi');
+    if (!BroadcasterConfig.allowedBitrates.contains(candidate.bitrate)) {
+      errors.add('Bitrate wajib 32, 64, 96, atau 128 kbps');
     }
-    if (candidate.username.trim().isEmpty) errors.add('Username wajib diisi');
-    if (candidate.password.isEmpty) errors.add('Password wajib diisi');
+    if (candidate.audioInput.trim().isEmpty) {
+      errors.add('Input audio wajib dipilih');
+    }
+    if (candidate.password.isEmpty) {
+      errors.add('Password/source password wajib diisi');
+    }
+
+    final looksLikeListenerUrl =
+        mount.contains('/listen/') ||
+        mount.endsWith('.mp3') ||
+        mount.startsWith('http://') ||
+        mount.startsWith('https://');
+    if (looksLikeListenerUrl) {
+      errors.add(
+        'Ini terlihat seperti URL pendengar. Untuk broadcast, gunakan data source/DJ connection dari AzuraCast.',
+      );
+    }
+
+    if (candidate.isShoutcast) {
+      if (mount.startsWith('/')) {
+        errors.add(
+          'SHOUTcast biasanya memakai Stream ID tanpa awalan /. Kosongkan jika SHOUTcast v1 tidak memakai Stream ID.',
+        );
+      }
+    } else {
+      if (mount.isEmpty) {
+        errors.add('Mount Point Source wajib diisi');
+      } else if (!mount.startsWith('/')) {
+        errors.add('Mount Point Source harus diawali /');
+      }
+      if (candidate.username.trim().isEmpty) {
+        errors.add('Username DJ wajib diisi');
+      }
+    }
+
+    _appendValidationLog(
+      host: host,
+      port: candidate.port,
+      mount: mount,
+      username: candidate.username.trim(),
+      isValid: errors.isEmpty,
+    );
     return errors;
   }
 
@@ -153,6 +214,8 @@ class BroadcasterProvider extends ChangeNotifier {
       host: nextConfig.host.trim(),
       mountPoint: nextConfig.mountPoint.trim(),
       username: nextConfig.username.trim(),
+      audioInput: nextConfig.audioInput.trim(),
+      serverType: nextConfig.serverType,
     );
     config = normalizedConfig;
     await _configStorageService.saveConfig(normalizedConfig);
@@ -166,28 +229,42 @@ class BroadcasterProvider extends ChangeNotifier {
   }
 
   Future<void> testConnection(BroadcasterConfig nextConfig) async {
+    final errors = validateSetupConfig(nextConfig);
+    if (errors.isNotEmpty) {
+      testResultStatus = ConnectionStatus.invalidConfig;
+      status = ConnectionStatus.invalidConfig;
+      _handleNativeLog(errors.first);
+      notifyListeners();
+      return;
+    }
+
     await saveConfig(nextConfig);
-    testResult = TestConnectionResult.idle;
+    testResultStatus = ConnectionStatus.connecting;
     status = ConnectionStatus.connecting;
     notifyListeners();
 
-    final result = await _connectionTestService.test(config);
-    testResult = result;
-    status = switch (result) {
-      TestConnectionResult.success => ConnectionStatus.offline,
-      TestConnectionResult.authenticationFailed =>
-        ConnectionStatus.authenticationFailed,
-      TestConnectionResult.serverUnreachable =>
-        ConnectionStatus.serverUnreachable,
-      TestConnectionResult.idle => ConnectionStatus.offline,
-    };
+    final resultStatus = await _nativeBroadcastService.testBroadcastConnection(
+      config,
+    );
+    testResultStatus = resultStatus;
+    status = resultStatus == ConnectionStatus.live
+        ? ConnectionStatus.offline
+        : resultStatus;
     notifyListeners();
   }
 
-  Future<StartBroadcastResult> startBroadcast() async {
+  Future<StartBroadcastResult> startBroadcast({
+    String ustadzName = '',
+    String kajianTitle = '',
+    String kajianTheme = '',
+  }) async {
     if (isLive || isBusy) return StartBroadcastResult.started;
 
-    if (!hasCompleteConfig) {
+    final errors = validateSetupConfig(config);
+    if (errors.isNotEmpty || !hasCompleteConfig) {
+      status = ConnectionStatus.invalidConfig;
+      if (errors.isNotEmpty) _handleNativeLog(errors.first);
+      notifyListeners();
       return StartBroadcastResult.missingConfig;
     }
 
@@ -201,12 +278,21 @@ class BroadcasterProvider extends ChangeNotifier {
           : StartBroadcastResult.microphoneDenied;
     }
 
+    _setSessionMetadata(
+      ustadzName: ustadzName,
+      kajianTitle: kajianTitle,
+      kajianTheme: kajianTheme,
+    );
     networkType = await _networkInfoService.getNetworkType();
     _prepareNewSession();
     notifyListeners();
 
     final didStartNative = await _nativeBroadcastService.startBroadcastService(
       config: config,
+      ustadzName: this.ustadzName,
+      kajianTitle: this.kajianTitle,
+      kajianTheme: this.kajianTheme,
+      liveMetadata: liveMetadata,
     );
     if (didStartNative) {
       _nativeServiceRunning = true;
@@ -214,10 +300,8 @@ class BroadcasterProvider extends ChangeNotifier {
       return StartBroadcastResult.started;
     }
 
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-
-    status = ConnectionStatus.live;
-    _startStatsTimer();
+    status = ConnectionStatus.serverUnreachable;
+    await _saveSessionLog(ConnectionStatus.serverUnreachable);
     notifyListeners();
     return StartBroadcastResult.started;
   }
@@ -225,8 +309,8 @@ class BroadcasterProvider extends ChangeNotifier {
   Future<void> stopBroadcast() async {
     if (!isLive &&
         !isBusy &&
-        status != ConnectionStatus.reconnecting &&
-        status != ConnectionStatus.connectionDropped) {
+        status != ConnectionStatus.connectionDropped &&
+        status != ConnectionStatus.timeout) {
       return;
     }
 
@@ -234,6 +318,7 @@ class BroadcasterProvider extends ChangeNotifier {
       await _nativeBroadcastService.stopBroadcastService();
       _nativeServiceRunning = false;
       _usingNativeAudioLevel = false;
+      _usingNativeStats = false;
     }
     status = ConnectionStatus.stopped;
     audioLevel = 0;
@@ -248,18 +333,9 @@ class BroadcasterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void simulateStatus(ConnectionStatus nextStatus) {
-    status = nextStatus;
-    if (nextStatus != ConnectionStatus.live &&
-        nextStatus != ConnectionStatus.reconnecting &&
-        nextStatus != ConnectionStatus.connecting) {
-      _timer?.cancel();
-    }
-    notifyListeners();
-  }
-
   void _prepareNewSession() {
     status = ConnectionStatus.connecting;
+    testResultStatus = ConnectionStatus.offline;
     duration = Duration.zero;
     audioLevel = 0.18;
     _usingNativeAudioLevel = false;
@@ -269,15 +345,30 @@ class BroadcasterProvider extends ChangeNotifier {
     uploadSpeedKbps = 0;
     averageUploadKbps = 0;
     reconnectCount = 0;
+    recordingFilePath = '';
+    recordingBytes = 0;
     _startedAt = DateTime.now();
+  }
+
+  void _setSessionMetadata({
+    required String ustadzName,
+    required String kajianTitle,
+    required String kajianTheme,
+  }) {
+    this.ustadzName = cleanLiveMetadataField(ustadzName, maxLength: 80);
+    this.kajianTitle = cleanLiveMetadataField(kajianTitle, maxLength: 80);
+    this.kajianTheme = cleanLiveMetadataField(kajianTheme, maxLength: 120);
+    liveMetadata = buildLiveMetadata(
+      this.ustadzName,
+      this.kajianTitle,
+      this.kajianTheme,
+    );
   }
 
   void _handleNativeStatus(ConnectionStatus nativeStatus) {
     status = nativeStatus;
     if (nativeStatus == ConnectionStatus.connecting) {
       _nativeServiceRunning = true;
-      _usingNativeAudioLevel = true;
-      _usingNativeStats = true;
       _startedAt ??= DateTime.now();
     }
     if (nativeStatus == ConnectionStatus.live ||
@@ -288,10 +379,7 @@ class BroadcasterProvider extends ChangeNotifier {
       _startedAt ??= DateTime.now();
       _startStatsTimer();
     }
-    if (nativeStatus == ConnectionStatus.stopped ||
-        nativeStatus == ConnectionStatus.offline ||
-        nativeStatus == ConnectionStatus.authenticationFailed ||
-        nativeStatus == ConnectionStatus.serverUnreachable) {
+    if (_isFinalStatus(nativeStatus)) {
       _nativeServiceRunning = false;
       _usingNativeAudioLevel = false;
       _usingNativeStats = false;
@@ -300,6 +388,17 @@ class BroadcasterProvider extends ChangeNotifier {
       unawaited(_saveSessionLog(nativeStatus));
     }
     notifyListeners();
+  }
+
+  bool _isFinalStatus(ConnectionStatus nextStatus) {
+    return nextStatus == ConnectionStatus.stopped ||
+        nextStatus == ConnectionStatus.offline ||
+        nextStatus == ConnectionStatus.authenticationFailed ||
+        nextStatus == ConnectionStatus.serverUnreachable ||
+        nextStatus == ConnectionStatus.timeout ||
+        nextStatus == ConnectionStatus.invalidConfig ||
+        nextStatus == ConnectionStatus.protocolRejected ||
+        nextStatus == ConnectionStatus.unsupportedCodec;
   }
 
   void _handleNativeAudioLevel(double level) {
@@ -315,16 +414,42 @@ class BroadcasterProvider extends ChangeNotifier {
     uploadSpeedKbps = stats.uploadSpeedKbps;
     averageUploadKbps = stats.averageUploadKbps;
     reconnectCount = stats.reconnectCount;
+    recordingFilePath = stats.recordingFilePath;
+    recordingBytes = stats.recordingBytes;
     notifyListeners();
   }
 
   void _handleNativeLog(String message) {
     if (message.trim().isEmpty) return;
-    nativeLogMessages.insert(0, message);
-    if (nativeLogMessages.length > 30) {
-      nativeLogMessages.removeRange(30, nativeLogMessages.length);
+    nativeLogMessages.insert(0, '${_formatLogTime(DateTime.now())}\n$message');
+    if (nativeLogMessages.length > 40) {
+      nativeLogMessages.removeRange(40, nativeLogMessages.length);
     }
     notifyListeners();
+  }
+
+  void _appendValidationLog({
+    required String host,
+    required int port,
+    required String mount,
+    required String username,
+    required bool isValid,
+  }) {
+    _handleNativeLog(
+      '[VALIDATION]\n'
+      'host=$host\n'
+      'port=$port\n'
+      'mount=$mount\n'
+      'username=$username\n'
+      'result=${isValid ? 'valid' : 'invalid'}',
+    );
+  }
+
+  String _formatLogTime(DateTime dateTime) {
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final second = dateTime.second.toString().padLeft(2, '0');
+    return '[TIME]\n$hour:$minute:$second';
   }
 
   void _startStatsTimer() {
@@ -359,17 +484,6 @@ class BroadcasterProvider extends ChangeNotifier {
       unawaited(refreshNetworkType());
     }
 
-    if (duration.inSeconds > 0 && duration.inSeconds % 37 == 0) {
-      status = ConnectionStatus.reconnecting;
-      reconnectCount += 1;
-      Future<void>.delayed(const Duration(seconds: 2), () {
-        if (status == ConnectionStatus.reconnecting) {
-          status = ConnectionStatus.live;
-          notifyListeners();
-        }
-      });
-    }
-
     notifyListeners();
   }
 
@@ -386,6 +500,12 @@ class BroadcasterProvider extends ChangeNotifier {
       totalUploadBytes: totalUploadBytes,
       reconnectCount: reconnectCount,
       finalStatus: finalStatus,
+      ustadzName: ustadzName,
+      kajianTitle: kajianTitle,
+      kajianTheme: kajianTheme,
+      liveMetadata: liveMetadata,
+      recordingFilePath: recordingFilePath,
+      recordingBytes: recordingBytes,
     );
     logs = [log, ...logs];
     await _logStorageService.saveLogs(logs);

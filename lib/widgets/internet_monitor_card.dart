@@ -47,6 +47,16 @@ class InternetMonitorCard extends StatelessWidget {
             _MonitorRow(
               label: 'Jumlah reconnect',
               value: provider.reconnectCount.toString(),
+            ),
+            _MonitorRow(
+              label: 'Ukuran rekaman',
+              value: '${provider.recordingMb.toStringAsFixed(2)} MB',
+            ),
+            _MonitorRow(
+              label: 'File rekaman',
+              value: provider.recordingFilePath.isEmpty
+                  ? 'Belum aktif'
+                  : provider.recordingFilePath.split(RegExp(r'[\\/]')).last,
               isLast: true,
             ),
           ],
@@ -88,11 +98,15 @@ class _MonitorRow extends StatelessWidget {
               ),
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppTheme.ink,
-              fontWeight: FontWeight.w900,
+          Flexible(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: AppTheme.ink,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ],

@@ -97,7 +97,12 @@ class StatusCard extends StatelessWidget {
       ConnectionStatus.authenticationFailed ||
       ConnectionStatus.serverUnreachable ||
       ConnectionStatus.microphoneDenied ||
-      ConnectionStatus.connectionDropped => AppTheme.danger,
+      ConnectionStatus.connectionDropped ||
+      ConnectionStatus.timeout ||
+      ConnectionStatus.invalidConfig ||
+      ConnectionStatus.protocolRejected ||
+      ConnectionStatus.unsupportedCodec ||
+      ConnectionStatus.unknownError => AppTheme.danger,
     };
   }
 
@@ -113,6 +118,11 @@ class StatusCard extends StatelessWidget {
       ConnectionStatus.microphoneDenied => Icons.mic_off_rounded,
       ConnectionStatus.connectionDropped =>
         Icons.signal_wifi_connected_no_internet_4_rounded,
+      ConnectionStatus.timeout => Icons.timer_off_rounded,
+      ConnectionStatus.invalidConfig => Icons.rule_folder_rounded,
+      ConnectionStatus.protocolRejected => Icons.sync_problem_rounded,
+      ConnectionStatus.unsupportedCodec => Icons.volume_off_rounded,
+      ConnectionStatus.unknownError => Icons.error_outline_rounded,
     };
   }
 

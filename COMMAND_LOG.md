@@ -116,7 +116,134 @@ flutter build apk --debug
 Output penting:
 
 ```text
-Formatted 21 files
+Formatted 20 files
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```
+
+## Final Stabilization
+
+Instruksi:
+
+- Stabilkan aplikasi agar siap dipakai live ke AzuraCast/SHOUTcast.
+- Tambahkan bitrate 32 kbps.
+- Ganti test connection dummy menjadi native real handshake.
+- Jangan tampilkan live sebelum server menerima handshake.
+- Batasi reconnect otomatis dan hindari reconnect tanpa batas untuk error final.
+
+Hasil:
+
+- Default bitrate diubah ke 64 kbps.
+- SetupPage menampilkan bitrate 32/64/96/128 kbps, dengan label hemat data dan rekomendasi.
+- Validasi konfigurasi diperketat untuk host, port, password, bitrate, input audio, mount source Icecast, dan listener URL.
+- Provider Flutter dipulihkan agar memakai `BroadcastLogStorageService` normal dan status test native.
+- `NativeBroadcastService` menambahkan method `testBroadcastConnection(config)`.
+- `MainActivity.kt` menambahkan MethodChannel `testBroadcastConnection`.
+- `IcecastClient.kt` diganti utuh dengan handshake real:
+  - Icecast/AzuraCast memakai `SOURCE mount ICE/1.0` dan Basic Auth.
+  - SHOUTcast v1 memakai source password dan metadata `icy-*`.
+  - Test connection hanya menjalankan handshake, tanpa mengirim audio.
+- `BroadcastService.kt` diganti utuh untuk menghapus placeholder, memulai audio capture setelah handshake sukses, menjaga rekaman WAV lokal, mengirim stats real, dan menghentikan service bersih pada status final.
+- Reconnect otomatis dibatasi 5 kali dengan delay bertahap 2/5/10/20/30 detik.
+- Status tambahan sudah dipetakan: timeout, invalidConfig, protocolRejected, unsupportedCodec, unknownError.
+
+Verifikasi wajib:
+
+```powershell
+dart.bat format lib test
+flutter clean
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Output penting:
+
+```text
+Formatted 20 files
+Got dependencies!
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```
+
+## Dukungan SHOUTcast
+
+Instruksi:
+
+- Server stream berubah dari Icecast ke SHOUTcast.
+- Aplikasi reconnect terus dan belum bisa digunakan.
+- Pastikan konfigurasi yang disimpan dipahami sebagai lokal atau global.
+
+Hasil:
+
+- `BroadcasterConfig` menambahkan `serverType` dengan pilihan `SHOUTcast` dan `Icecast/AzuraCast`.
+- Default tipe server diubah ke `SHOUTcast`.
+- SetupPage menambahkan dropdown tipe server.
+- Untuk SHOUTcast, field username dan mount point tidak wajib.
+- `ConfigStorageService` menyimpan tipe server per perangkat.
+- `NativeBroadcastService` mengirim tipe server ke native Android.
+- Native Android membaca `serverType` dan memilih handshake:
+  - SHOUTcast: kirim source password, tunggu respons `OK`, lalu kirim metadata `icy-*`
+  - Icecast/AzuraCast: tetap memakai `SOURCE mount ICE/1.0` dan Basic Auth
+- README menjelaskan bahwa tombol Simpan menyimpan konfigurasi lokal per HP operator, bukan sinkron otomatis ke semua pengguna.
+
+Catatan:
+
+- Implementasi SHOUTcast saat ini menargetkan source protocol SHOUTcast v1.
+- Audio yang dikirim masih AAC-LC ADTS. Jika server SHOUTcast hanya menerima MP3, streaming tetap perlu encoder MP3 atau konfigurasi server yang menerima AAC.
+
+Verifikasi:
+
+```powershell
+dart.bat format lib test
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Output penting:
+
+```text
+Formatted 20 files
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```
+
+## Fitur Rekam Audio Lokal
+
+Instruksi:
+
+- Tambahkan fitur rekam audio.
+- Rekaman harus bisa berjalan bersamaan dengan broadcast.
+- Sumber rekaman harus suara yang masuk ke HP, bukan audio dari jaringan.
+
+Hasil:
+
+- `AudioRecorder.kt` ditambahkan untuk membuat file WAV lokal dari PCM `AudioRecord`.
+- `BroadcastService.kt` memulai rekaman saat service broadcast mulai dan menghentikan rekaman saat service berhenti.
+- Rekaman ditulis dari buffer microphone/USB input sebelum audio masuk encoder dan sebelum dikirim ke Icecast/AzuraCast.
+- File rekaman disimpan di folder app external files `Music/recordings` dengan nama `radio-taqriibussunnah-YYYYMMDD-HHMMSS.wav`.
+- Stats native mengirim path file rekaman dan ukuran rekaman ke Flutter.
+- Monitoring Live menampilkan ukuran dan nama file rekaman.
+- Log siaran menyimpan ukuran dan nama file rekaman.
+
+Verifikasi:
+
+```powershell
+dart.bat format lib test
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Output penting:
+
+```text
+Formatted 20 files
 No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk
@@ -164,7 +291,7 @@ flutter build apk --debug
 Output penting:
 
 ```text
-Formatted 21 files
+Formatted 20 files
 No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk
@@ -203,7 +330,7 @@ flutter build apk --debug
 Output penting:
 
 ```text
-Formatted 21 files
+Formatted 20 files
 No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk
@@ -257,7 +384,7 @@ flutter build apk --debug
 Output penting:
 
 ```text
-Formatted 21 files
+Formatted 20 files
 No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk
@@ -339,7 +466,7 @@ flutter build apk --debug
 Output penting:
 
 ```text
-Formatted 21 files
+Formatted 20 files
 No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk

@@ -65,6 +65,8 @@ class NativeBroadcastService {
         uploadSpeedKbps: (map['uploadSpeedKbps'] as num?)?.toDouble() ?? 0,
         averageUploadKbps: (map['averageUploadKbps'] as num?)?.toDouble() ?? 0,
         reconnectCount: (map['reconnectCount'] as num?)?.toInt() ?? 0,
+        recordingFilePath: map['recordingFilePath']?.toString() ?? '',
+        recordingBytes: (map['recordingBytes'] as num?)?.toInt() ?? 0,
       );
     });
   }
@@ -77,6 +79,10 @@ class NativeBroadcastService {
 
   Future<bool> startBroadcastService({
     required BroadcasterConfig config,
+    required String ustadzName,
+    required String kajianTitle,
+    required String kajianTheme,
+    required String liveMetadata,
   }) async {
     try {
       return await _methodChannel.invokeMethod<bool>('startBroadcastService', {
@@ -86,6 +92,11 @@ class NativeBroadcastService {
             'username': config.username,
             'password': config.password,
             'bitrate': config.bitrate,
+            'serverType': config.serverType,
+            'ustadzName': ustadzName,
+            'kajianTitle': kajianTitle,
+            'kajianTheme': kajianTheme,
+            'liveMetadata': liveMetadata,
           }) ??
           false;
     } on MissingPluginException {
@@ -119,6 +130,28 @@ class NativeBroadcastService {
     }
   }
 
+  Future<ConnectionStatus> testBroadcastConnection(
+    BroadcasterConfig config,
+  ) async {
+    try {
+      final status = await _methodChannel
+          .invokeMethod<String>('testBroadcastConnection', {
+            'host': config.host,
+            'port': config.port,
+            'mountPoint': config.mountPoint,
+            'username': config.username,
+            'password': config.password,
+            'bitrate': config.bitrate,
+            'serverType': config.serverType,
+          });
+      return _statusFromNative(status);
+    } on MissingPluginException {
+      return ConnectionStatus.serverUnreachable;
+    } on PlatformException {
+      return ConnectionStatus.unknownError;
+    }
+  }
+
   ConnectionStatus _statusFromNative(String? value) {
     return switch (value) {
       'connecting' => ConnectionStatus.connecting,
@@ -127,6 +160,11 @@ class NativeBroadcastService {
       'authenticationFailed' => ConnectionStatus.authenticationFailed,
       'serverUnreachable' => ConnectionStatus.serverUnreachable,
       'connectionDropped' => ConnectionStatus.connectionDropped,
+      'timeout' => ConnectionStatus.timeout,
+      'invalidConfig' => ConnectionStatus.invalidConfig,
+      'protocolRejected' => ConnectionStatus.protocolRejected,
+      'unsupportedCodec' => ConnectionStatus.unsupportedCodec,
+      'unknownError' => ConnectionStatus.unknownError,
       'stopped' => ConnectionStatus.stopped,
       _ => ConnectionStatus.offline,
     };
@@ -139,10 +177,14 @@ class NativeBroadcastStats {
     required this.uploadSpeedKbps,
     required this.averageUploadKbps,
     required this.reconnectCount,
+    required this.recordingFilePath,
+    required this.recordingBytes,
   });
 
   final int totalUploadBytes;
   final double uploadSpeedKbps;
   final double averageUploadKbps;
   final int reconnectCount;
+  final String recordingFilePath;
+  final int recordingBytes;
 }

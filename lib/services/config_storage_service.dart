@@ -13,6 +13,7 @@ class ConfigStorageService {
   static const _usernameKey = 'config_username';
   static const _bitrateKey = 'config_bitrate';
   static const _audioInputKey = 'config_audio_input';
+  static const _serverTypeKey = 'config_server_type';
   static const _passwordKey = 'config_password';
 
   final FlutterSecureStorage _secureStorage;
@@ -25,6 +26,7 @@ class ConfigStorageService {
     await prefs.setString(_usernameKey, config.username);
     await prefs.setInt(_bitrateKey, config.bitrate);
     await prefs.setString(_audioInputKey, config.audioInput);
+    await prefs.setString(_serverTypeKey, config.serverType);
 
     await _writePassword(config.password);
   }
@@ -44,6 +46,8 @@ class ConfigStorageService {
       bitrate: prefs.getInt(_bitrateKey) ?? BroadcasterConfig.empty.bitrate,
       audioInput:
           prefs.getString(_audioInputKey) ?? BroadcasterConfig.empty.audioInput,
+      serverType:
+          prefs.getString(_serverTypeKey) ?? BroadcasterConfig.empty.serverType,
     );
   }
 
@@ -55,6 +59,7 @@ class ConfigStorageService {
     await prefs.remove(_usernameKey);
     await prefs.remove(_bitrateKey);
     await prefs.remove(_audioInputKey);
+    await prefs.remove(_serverTypeKey);
     await _deletePassword();
   }
 

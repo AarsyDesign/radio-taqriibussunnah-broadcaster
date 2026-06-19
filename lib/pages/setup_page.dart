@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/broadcaster_config.dart';
+import '../models/connection_status.dart';
 import '../providers/broadcaster_provider.dart';
-import '../services/connection_test_service.dart';
 import '../theme/app_theme.dart';
 
 class SetupPage extends StatefulWidget {
@@ -20,8 +20,9 @@ class _SetupPageState extends State<SetupPage> {
   late final TextEditingController _mountController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
-  int _bitrate = 96;
+  int _bitrate = 64;
   String _audioInput = 'Mic HP';
+  String _serverType = BroadcasterConfig.shoutcast;
   bool _obscurePassword = true;
   bool _didApplyStoredConfig = false;
 
@@ -36,6 +37,7 @@ class _SetupPageState extends State<SetupPage> {
     _passwordController = TextEditingController(text: provider.djPassword);
     _bitrate = provider.bitrate;
     _audioInput = provider.audioInput;
+    _serverType = provider.serverType;
   }
 
   @override
@@ -65,6 +67,27 @@ class _SetupPageState extends State<SetupPage> {
             key: _formKey,
             child: Column(
               children: [
+                DropdownButtonFormField<String>(
+                  initialValue: _serverType,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipe Server',
+                    prefixIcon: Icon(Icons.settings_input_antenna_rounded),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: BroadcasterConfig.shoutcast,
+                      child: Text(BroadcasterConfig.shoutcast),
+                    ),
+                    DropdownMenuItem(
+                      value: BroadcasterConfig.icecast,
+                      child: Text(BroadcasterConfig.icecast),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _serverType = value);
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextFormField(
                   controller: _hostController,
                   decoration: const InputDecoration(
@@ -92,12 +115,19 @@ class _SetupPageState extends State<SetupPage> {
                     Expanded(
                       child: TextFormField(
                         controller: _mountController,
-                        decoration: const InputDecoration(
-                          labelText: 'Mount Point',
-                          prefixIcon: Icon(Icons.link_rounded),
+                        decoration: InputDecoration(
+                          labelText: _isShoutcast
+                              ? 'Stream ID / Mount'
+                              : 'Mount Point Source',
+                          helperText: _isShoutcast
+                              ? 'Kosongkan jika SHOUTcast v1 tidak memakai stream ID.'
+                              : 'Ambil dari Connection Information DJ AzuraCast, bukan URL pendengar.',
+                          prefixIcon: const Icon(Icons.link_rounded),
                         ),
-                        validator: (value) =>
-                            _required(value, 'Mount point wajib diisi'),
+                        validator: (value) {
+                          if (_isShoutcast) return null;
+                          return _required(value, 'Mount point wajib diisi');
+                        },
                       ),
                     ),
                   ],
@@ -105,19 +135,23 @@ class _SetupPageState extends State<SetupPage> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _usernameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Username DJ',
-                    prefixIcon: Icon(Icons.person_rounded),
+                  decoration: InputDecoration(
+                    labelText: _isShoutcast
+                        ? 'Username DJ (opsional)'
+                        : 'Username DJ',
+                    prefixIcon: const Icon(Icons.person_rounded),
                   ),
-                  validator: (value) =>
-                      _required(value, 'Username wajib diisi'),
+                  validator: (value) {
+                    if (_isShoutcast) return null;
+                    return _required(value, 'Username wajib diisi');
+                  },
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
-                    labelText: 'Password DJ',
+                    labelText: _isShoutcast ? 'Source Password' : 'Password DJ',
                     prefixIcon: const Icon(Icons.lock_rounded),
                     suffixIcon: IconButton(
                       tooltip: _obscurePassword
@@ -144,7 +178,14 @@ class _SetupPageState extends State<SetupPage> {
                     prefixIcon: Icon(Icons.speed_rounded),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 64, child: Text('64 kbps')),
+                    DropdownMenuItem(
+                      value: 32,
+                      child: Text('32 kbps (Hemat Data)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 64,
+                      child: Text('64 kbps (Rekomendasi)'),
+                    ),
                     DropdownMenuItem(value: 96, child: Text('96 kbps')),
                     DropdownMenuItem(value: 128, child: Text('128 kbps')),
                   ],
@@ -152,6 +193,19 @@ class _SetupPageState extends State<SetupPage> {
                     if (value != null) setState(() => _bitrate = value);
                   },
                 ),
+                if (_bitrate == 32) ...[
+                  const SizedBox(height: 6),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Mode hemat data. Kualitas suara lebih rendah, tetapi lebih ringan untuk internet lemah.',
+                      style: TextStyle(
+                        color: AppTheme.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _audioInput,
@@ -171,7 +225,7 @@ class _SetupPageState extends State<SetupPage> {
                   },
                 ),
                 const SizedBox(height: 18),
-                _TestResultBanner(result: provider.testResult),
+                _TestResultBanner(result: provider.testResultStatus),
                 const SizedBox(height: 18),
                 OutlinedButton.icon(
                   onPressed: provider.isBusy ? null : _testConnection,
@@ -212,6 +266,7 @@ class _SetupPageState extends State<SetupPage> {
         _passwordController.text = provider.djPassword;
         _bitrate = provider.bitrate;
         _audioInput = provider.audioInput;
+        _serverType = provider.serverType;
       });
     });
   }
@@ -241,8 +296,11 @@ class _SetupPageState extends State<SetupPage> {
       password: _passwordController.text,
       bitrate: _bitrate,
       audioInput: _audioInput,
+      serverType: _serverType,
     );
   }
+
+  bool get _isShoutcast => _serverType == BroadcasterConfig.shoutcast;
 
   String? _required(String? value, String message) {
     if (value == null || value.trim().isEmpty) return message;
@@ -270,34 +328,70 @@ class _SetupPageState extends State<SetupPage> {
 class _TestResultBanner extends StatelessWidget {
   const _TestResultBanner({required this.result});
 
-  final TestConnectionResult result;
+  final ConnectionStatus result;
 
   @override
   Widget build(BuildContext context) {
-    if (result == TestConnectionResult.idle) {
+    if (result == ConnectionStatus.offline) {
       return const SizedBox.shrink();
     }
 
     final (icon, title, detail, color) = switch (result) {
-      TestConnectionResult.success => (
+      ConnectionStatus.live => (
         Icons.check_circle_rounded,
         'Success',
         'Server merespons dan kredensial diterima.',
         AppTheme.leaf,
       ),
-      TestConnectionResult.authenticationFailed => (
+      ConnectionStatus.connecting => (
+        Icons.sync_rounded,
+        'Testing',
+        'Menguji koneksi native ke server.',
+        AppTheme.amber,
+      ),
+      ConnectionStatus.authenticationFailed => (
         Icons.lock_person_rounded,
         'Authentication failed',
-        'Username DJ atau password ditolak.',
+        'Password/source password salah atau akun DJ tidak diterima.',
         AppTheme.danger,
       ),
-      TestConnectionResult.serverUnreachable => (
+      ConnectionStatus.serverUnreachable => (
         Icons.cloud_off_rounded,
         'Server unreachable',
-        'Host tidak dapat dijangkau.',
+        'Server atau port tidak bisa dijangkau.',
         AppTheme.danger,
       ),
-      TestConnectionResult.idle => (Icons.info_rounded, '', '', AppTheme.muted),
+      ConnectionStatus.timeout => (
+        Icons.timer_off_rounded,
+        'Timeout',
+        'Koneksi timeout. Cek internet, host, port, atau firewall.',
+        AppTheme.danger,
+      ),
+      ConnectionStatus.invalidConfig => (
+        Icons.rule_folder_rounded,
+        'Invalid config',
+        'Konfigurasi belum benar.',
+        AppTheme.danger,
+      ),
+      ConnectionStatus.protocolRejected => (
+        Icons.sync_problem_rounded,
+        'Protocol rejected',
+        'Server menolak protocol yang dipilih.',
+        AppTheme.danger,
+      ),
+      ConnectionStatus.unsupportedCodec => (
+        Icons.volume_off_rounded,
+        'Unsupported codec',
+        'Server kemungkinan tidak menerima format audio aplikasi.',
+        AppTheme.danger,
+      ),
+      ConnectionStatus.unknownError => (
+        Icons.error_outline_rounded,
+        'Unknown error',
+        'Terjadi error tidak dikenal. Cek log native.',
+        AppTheme.danger,
+      ),
+      _ => (Icons.info_rounded, result.label, result.detail, AppTheme.muted),
     };
 
     return Container(

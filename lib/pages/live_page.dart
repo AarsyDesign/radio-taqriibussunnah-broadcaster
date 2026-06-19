@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/connection_status.dart';
 import '../providers/broadcaster_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/audio_level_meter.dart';
@@ -9,8 +8,17 @@ import '../widgets/internet_monitor_card.dart';
 import '../widgets/primary_live_button.dart';
 import '../widgets/status_card.dart';
 
-class LivePage extends StatelessWidget {
+class LivePage extends StatefulWidget {
   const LivePage({super.key});
+
+  @override
+  State<LivePage> createState() => _LivePageState();
+}
+
+class _LivePageState extends State<LivePage> {
+  final _ustadzNameController = TextEditingController();
+  final _kajianTitleController = TextEditingController();
+  final _kajianThemeController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -45,13 +53,18 @@ class LivePage extends StatelessWidget {
                 const SizedBox(height: 12),
                 InternetMonitorCard(provider: provider),
                 const SizedBox(height: 16),
+                _LiveMetadataFields(
+                  ustadzNameController: _ustadzNameController,
+                  kajianTitleController: _kajianTitleController,
+                  kajianThemeController: _kajianThemeController,
+                  enabled: !provider.isBusy && !provider.isLive,
+                ),
+                const SizedBox(height: 16),
                 PrimaryLiveButton(
                   status: provider.status,
                   onStart: () => _startBroadcast(context),
                   onStop: () => _confirmStop(context),
                 ),
-                const SizedBox(height: 14),
-                _DummyStatusControls(provider: provider),
               ],
             ),
     );
@@ -59,7 +72,11 @@ class LivePage extends StatelessWidget {
 
   Future<void> _startBroadcast(BuildContext context) async {
     final provider = context.read<BroadcasterProvider>();
-    final result = await provider.startBroadcast();
+    final result = await provider.startBroadcast(
+      ustadzName: _ustadzNameController.text,
+      kajianTitle: _kajianTitleController.text,
+      kajianTheme: _kajianThemeController.text,
+    );
     if (!context.mounted) return;
 
     final message = switch (result) {
@@ -105,47 +122,81 @@ class LivePage extends StatelessWidget {
       await context.read<BroadcasterProvider>().stopBroadcast();
     }
   }
+
+  @override
+  void dispose() {
+    _ustadzNameController.dispose();
+    _kajianTitleController.dispose();
+    _kajianThemeController.dispose();
+    super.dispose();
+  }
 }
 
-class _DummyStatusControls extends StatelessWidget {
-  const _DummyStatusControls({required this.provider});
+class _LiveMetadataFields extends StatelessWidget {
+  const _LiveMetadataFields({
+    required this.ustadzNameController,
+    required this.kajianTitleController,
+    required this.kajianThemeController,
+    required this.enabled,
+  });
 
-  final BroadcasterProvider provider;
+  final TextEditingController ustadzNameController;
+  final TextEditingController kajianTitleController;
+  final TextEditingController kajianThemeController;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Status Dummy',
-              style: TextStyle(
-                color: AppTheme.muted,
-                fontWeight: FontWeight.w800,
+            TextField(
+              controller: ustadzNameController,
+              enabled: enabled,
+              maxLength: 80,
+              decoration: const InputDecoration(
+                labelText: 'Nama Ustadz',
+                hintText: 'Contoh: Ustadz Abu Zaid',
+                prefixIcon: Icon(Icons.person_rounded),
+                counterText: '',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: kajianTitleController,
+              enabled: enabled,
+              maxLength: 80,
+              decoration: const InputDecoration(
+                labelText: 'Judul Kajian',
+                hintText: 'Contoh: Kitab Tauhid',
+                prefixIcon: Icon(Icons.menu_book_rounded),
+                counterText: '',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: kajianThemeController,
+              enabled: enabled,
+              maxLength: 120,
+              decoration: const InputDecoration(
+                labelText: 'Tema Pembahasan',
+                hintText: 'Contoh: Bab Takut Kepada Syirik',
+                prefixIcon: Icon(Icons.topic_rounded),
+                counterText: '',
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final status in ConnectionStatus.values)
-                  ChoiceChip(
-                    label: Text(status.label),
-                    selected: provider.status == status,
-                    onSelected: (_) => provider.simulateStatus(status),
-                    selectedColor: const Color(0xFFE5EEDA),
-                    labelStyle: TextStyle(
-                      color: provider.status == status
-                          ? AppTheme.forest
-                          : AppTheme.muted,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-              ],
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Opsional. Jika diisi, akan tampil di aplikasi dan web sebagai info siaran live.',
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),

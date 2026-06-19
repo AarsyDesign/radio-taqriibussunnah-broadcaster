@@ -7,6 +7,11 @@ enum ConnectionStatus {
   serverUnreachable,
   microphoneDenied,
   connectionDropped,
+  timeout,
+  invalidConfig,
+  protocolRejected,
+  unsupportedCodec,
+  unknownError,
   stopped,
 }
 
@@ -21,6 +26,11 @@ extension ConnectionStatusLabel on ConnectionStatus {
       ConnectionStatus.serverUnreachable => 'Server Unreachable',
       ConnectionStatus.microphoneDenied => 'Microphone Denied',
       ConnectionStatus.connectionDropped => 'Connection Dropped',
+      ConnectionStatus.timeout => 'Connection Timeout',
+      ConnectionStatus.invalidConfig => 'Invalid Configuration',
+      ConnectionStatus.protocolRejected => 'Protocol Rejected',
+      ConnectionStatus.unsupportedCodec => 'Unsupported Audio Format',
+      ConnectionStatus.unknownError => 'Unknown Error',
       ConnectionStatus.stopped => 'Stopped',
     };
   }
@@ -35,7 +45,17 @@ extension ConnectionStatusLabel on ConnectionStatus {
         'Username atau password ditolak.',
       ConnectionStatus.serverUnreachable => 'Server tidak dapat dijangkau.',
       ConnectionStatus.microphoneDenied => 'Izin mikrofon belum diberikan.',
-      ConnectionStatus.connectionDropped => 'Koneksi siaran terputus.',
+      ConnectionStatus.connectionDropped =>
+        'Koneksi terputus. Mencoba menyambung ulang.',
+      ConnectionStatus.timeout =>
+        'Koneksi timeout. Cek internet, host, port, atau firewall.',
+      ConnectionStatus.invalidConfig => 'Konfigurasi belum benar.',
+      ConnectionStatus.protocolRejected =>
+        'Server menolak protokol. Coba ganti tipe server (Icecast/SHOUTcast).',
+      ConnectionStatus.unsupportedCodec =>
+        'Server kemungkinan tidak menerima format audio AAC dari aplikasi ini.',
+      ConnectionStatus.unknownError =>
+        'Terjadi error tidak dikenal. Cek log native.',
       ConnectionStatus.stopped => 'Siaran dihentikan operator.',
     };
   }
