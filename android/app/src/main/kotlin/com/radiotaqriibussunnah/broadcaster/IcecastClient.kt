@@ -32,13 +32,17 @@ class IcecastClient(
     private val config: IcecastConfig,
     private val onStatus: (String) -> Unit,
     private val onBytesSent: (Long) -> Unit = {},
+    private val onReconnectState: (Int, Long) -> Unit = { _, _ -> },
     private val onLog: (String) -> Unit = {}
 ) {
     private val frameQueue = LinkedBlockingDeque<ByteArray>(MAX_QUEUE_SIZE)
     @Volatile
     private var running = false
+    @Volatile
+    private var currentSocket: Socket? = null
     private var workerThread: Thread? = null
     private var firstFrameLogged = false
+    private var lastBufferDropLogAtMs = 0L
 
     fun start() {
         if (running) return
@@ -51,6 +55,7 @@ class IcecastClient(
 
     fun stop() {
         running = false
+        runCatching { currentSocket?.close() }
         workerThread?.join(800)
         workerThread = null
         frameQueue.clear()
@@ -61,7 +66,14 @@ class IcecastClient(
         if (!frameQueue.offer(frame)) {
             frameQueue.pollFirst()
             frameQueue.offer(frame)
+            logBufferDrop()
         }
+    }
+
+    fun forceReconnect(reason: String) {
+        if (!running) return
+        onLog("Socket Watchdog: $reason. Socket lama ditutup aman.")
+        runCatching { currentSocket?.close() }
     }
 
     private fun runLoop() {
@@ -69,6 +81,7 @@ class IcecastClient(
         var attempts = 0
         while (running) {
             val socket = Socket()
+            currentSocket = socket
             try {
                 onStatus(if (hasConnected || attempts > 0) "reconnecting" else "connecting")
                 onLog("[TEST]\nRuntime connection start")
@@ -79,11 +92,18 @@ class IcecastClient(
                 socket.soTimeout = READ_TIMEOUT_MS
                 onLog("[SOCKET]\nSuccess\nSocket connected")
                 performHandshake(socket)
+                val restored = hasConnected || attempts > 0
                 hasConnected = true
                 attempts = 0
+                onReconnectState(0, 0L)
                 firstFrameLogged = false
                 onLog("[RESULT]\nSUCCESS")
-                onStatus("live")
+                if (restored) {
+                    onLog("Reconnect success. Metadata terakhir dikirim ulang.")
+                    onStatus("liveRestored")
+                } else {
+                    onStatus("live")
+                }
                 writeFrames(socket.getOutputStream())
             } catch (auth: AuthenticationFailedException) {
                 onLog("Authentication failed")
@@ -100,13 +120,13 @@ class IcecastClient(
             } catch (timeout: SocketTimeoutException) {
                 attempts += 1
                 onLog("[RESULT]\nTIMEOUT\n${timeout.message.orEmpty()}")
-                if (!retryOrFinish(attempts, if (hasConnected) "connectionDropped" else "timeout")) {
+                if (!retryOrFinish(attempts, if (hasConnected) "reconnectFailed" else "timeout")) {
                     running = false
                 }
             } catch (error: IOException) {
                 attempts += 1
-                onLog("[RESULT]\nSERVER UNREACHABLE\n${error.message.orEmpty()}")
-                if (!retryOrFinish(attempts, if (hasConnected) "connectionDropped" else "serverUnreachable")) {
+                onLog("[RESULT]\nSOCKET ERROR\n${error.message.orEmpty()}")
+                if (!retryOrFinish(attempts, if (hasConnected) "reconnectFailed" else "serverUnreachable")) {
                     running = false
                 }
             } catch (error: Exception) {
@@ -115,6 +135,9 @@ class IcecastClient(
                 running = false
             } finally {
                 runCatching { socket.close() }
+                if (currentSocket === socket) {
+                    currentSocket = null
+                }
             }
         }
     }
@@ -122,12 +145,16 @@ class IcecastClient(
     private fun retryOrFinish(attempts: Int, finalStatus: String): Boolean {
         if (!running) return false
         if (attempts > MAX_RECONNECT_ATTEMPTS) {
+            onReconnectState(MAX_RECONNECT_ATTEMPTS, 0L)
+            onLog("Gagal menyambung ulang setelah $MAX_RECONNECT_ATTEMPTS percobaan.")
             onStatus(finalStatus)
             return false
         }
         onStatus("reconnecting")
-        onLog("Reconnect attempt $attempts/$MAX_RECONNECT_ATTEMPTS in ${reconnectDelayMs(attempts) / 1000}s")
-        Thread.sleep(reconnectDelayMs(attempts))
+        val delayMs = reconnectDelayMs(attempts)
+        onReconnectState(attempts, delayMs)
+        onLog("Reconnect attempt $attempts/$MAX_RECONNECT_ATTEMPTS in ${formatDelay(delayMs)}")
+        Thread.sleep(delayMs)
         return true
     }
 
@@ -231,14 +258,26 @@ class IcecastClient(
     private fun writeFrames(output: OutputStream) {
         while (running) {
             val frame = frameQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
-            output.write(frame)
-            output.flush()
+            try {
+                output.write(frame)
+                output.flush()
+            } catch (error: IOException) {
+                onLog("Socket write failed: ${error.message.orEmpty()}")
+                throw error
+            }
             onBytesSent(frame.size.toLong())
             if (!firstFrameLogged) {
                 firstFrameLogged = true
                 onLog("First audio frame sent (${frame.size} bytes)")
             }
         }
+    }
+
+    private fun logBufferDrop() {
+        val now = System.currentTimeMillis()
+        if (now - lastBufferDropLogAtMs < BUFFER_DROP_LOG_INTERVAL_MS) return
+        lastBufferDropLogAtMs = now
+        onLog("Output buffer penuh, frame lama dibuang.")
     }
 
     private fun normalizeMountPoint(value: String): String {
@@ -249,19 +288,32 @@ class IcecastClient(
 
     private fun reconnectDelayMs(attempt: Int): Long {
         return when (attempt) {
-            1 -> 2_000L
-            2 -> 5_000L
-            3 -> 10_000L
-            4 -> 20_000L
+            1 -> 500L
+            2 -> 1_000L
+            3 -> 2_000L
+            4 -> 3_000L
+            5 -> 5_000L
+            6 -> 10_000L
+            7 -> 15_000L
+            8 -> 20_000L
             else -> 30_000L
+        }
+    }
+
+    private fun formatDelay(delayMs: Long): String {
+        return if (delayMs < 1000L) {
+            "${delayMs}ms"
+        } else {
+            "${delayMs / 1000}s"
         }
     }
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 5000
         private const val READ_TIMEOUT_MS = 5000
-        private const val MAX_QUEUE_SIZE = 256
-        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val MAX_QUEUE_SIZE = 192
+        private const val MAX_RECONNECT_ATTEMPTS = 10
+        private const val BUFFER_DROP_LOG_INTERVAL_MS = 3000L
 
         fun testConnection(config: IcecastConfig, onLog: (String) -> Unit = {}): String {
             onLog("[TEST]\nStarting connection test")

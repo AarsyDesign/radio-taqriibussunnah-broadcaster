@@ -7,7 +7,10 @@ import android.app.Service
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.media.audiofx.NoiseSuppressor
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.TrafficStats
 import android.os.Build
 import android.os.Environment
@@ -16,7 +19,6 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import io.flutter.plugin.common.EventChannel
-import kotlin.math.sqrt
 
 object BroadcastStatusEvents : EventChannel.StreamHandler {
     private var eventSink: EventChannel.EventSink? = null
@@ -79,6 +81,8 @@ object BroadcastStatsEvents : EventChannel.StreamHandler {
         uploadSpeedKbps: Double,
         averageUploadKbps: Double,
         reconnectCount: Int,
+        reconnectAttempt: Int,
+        nextReconnectDelayMs: Long,
         recordingFilePath: String,
         recordingBytes: Long
     ) {
@@ -87,6 +91,8 @@ object BroadcastStatsEvents : EventChannel.StreamHandler {
             "uploadSpeedKbps" to uploadSpeedKbps,
             "averageUploadKbps" to averageUploadKbps,
             "reconnectCount" to reconnectCount,
+            "reconnectAttempt" to reconnectAttempt,
+            "nextReconnectDelayMs" to nextReconnectDelayMs,
             "recordingFilePath" to recordingFilePath,
             "recordingBytes" to recordingBytes
         )
@@ -100,6 +106,8 @@ object BroadcastStatsEvents : EventChannel.StreamHandler {
         "uploadSpeedKbps" to 0.0,
         "averageUploadKbps" to 0.0,
         "reconnectCount" to 0,
+        "reconnectAttempt" to 0,
+        "nextReconnectDelayMs" to 0L,
         "recordingFilePath" to "",
         "recordingBytes" to 0L
     )
@@ -146,6 +154,9 @@ class BroadcastService : Service() {
     private var captureThread: Thread? = null
     private var preserveTerminalStatus = false
     private var currentBitrateKbps = DEFAULT_BITRATE_KBPS
+    private var lastAudioInput = "Mic HP"
+    private var audioProcessingConfig = AudioProcessingConfig()
+    private var noiseSuppressor: NoiseSuppressor? = null
 
     private var baselineTxBytes = 0L
     private var lastTxBytes = 0L
@@ -154,9 +165,14 @@ class BroadcastService : Service() {
     private var lastStatsAtMs = 0L
     private var averageUploadKbps = 0.0
     private var reconnectCount = 0
+    private var reconnectAttempt = 0
+    private var nextReconnectDelayMs = 0L
     private var recordingFilePath = ""
     private var recordingBytes = 0L
     private var lastStatus = "offline"
+    private var lastAudioDiagnosticLogAtMs = 0L
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val statsRunnable = object : Runnable {
         override fun run() {
@@ -206,6 +222,14 @@ class BroadcastService : Service() {
                         intent?.getStringExtra(EXTRA_LIVE_METADATA).orEmpty()
                     )
                 )
+                lastAudioInput = intent?.getStringExtra(EXTRA_AUDIO_INPUT) ?: "Mic HP"
+                audioProcessingConfig = AudioProcessingConfig(
+                    inputGainDb = intent?.getDoubleExtra(EXTRA_INPUT_GAIN_DB, 0.0) ?: 0.0,
+                    noiseSuppressionLevel = intent?.getStringExtra(EXTRA_NOISE_SUPPRESSION_LEVEL) ?: "Low",
+                    highPassFilterHz = intent?.getIntExtra(EXTRA_HIGH_PASS_FILTER_HZ, 80) ?: 80,
+                    limiterEnabled = intent?.getBooleanExtra(EXTRA_LIMITER_ENABLED, true) ?: true,
+                    audioSourceMode = intent?.getStringExtra(EXTRA_AUDIO_SOURCE_MODE) ?: "Natural / MIC"
+                )
                 startBroadcast(config)
             }
         }
@@ -215,6 +239,7 @@ class BroadcastService : Service() {
 
     override fun onDestroy() {
         stopAudioCapture()
+        stopNetworkWatchdog()
         stopIcecastClient()
         stopStatsMonitor(sendFinalSnapshot = true)
         isRunning = false
@@ -246,11 +271,13 @@ class BroadcastService : Service() {
         BroadcastStatusEvents.send("connecting")
         startForeground(NOTIFICATION_ID, buildNotification())
         startStatsMonitor()
+        startNetworkWatchdog()
         startIcecastClient(config)
     }
 
     private fun stopBroadcast() {
         stopAudioCapture()
+        stopNetworkWatchdog()
         stopIcecastClient()
         isRunning = false
         preserveTerminalStatus = false
@@ -265,6 +292,7 @@ class BroadcastService : Service() {
     private fun stopAfterTerminalStatus() {
         preserveTerminalStatus = true
         stopAudioCapture()
+        stopNetworkWatchdog()
         stopIcecastClient()
         isRunning = false
         BroadcastAudioLevelEvents.send(0.0)
@@ -283,6 +311,13 @@ class BroadcastService : Service() {
                     encodedUploadBytes += bytes
                 }
             },
+            onReconnectState = { attempt, delayMs ->
+                synchronized(statsLock) {
+                    reconnectAttempt = attempt
+                    nextReconnectDelayMs = delayMs
+                }
+                sendStatsSnapshot()
+            },
             onLog = { message -> BroadcastLogEvents.send(message) }
         )
         icecastClient = client
@@ -290,10 +325,16 @@ class BroadcastService : Service() {
     }
 
     private fun handleClientStatus(status: String) {
-        if (status == "reconnecting") {
+        if (status == "liveRestored") {
             reconnectCount += 1
         }
-        if (status == "live" && !audioStarted) {
+        if (status == "live" || status == "liveRestored") {
+            synchronized(statsLock) {
+                reconnectAttempt = 0
+                nextReconnectDelayMs = 0L
+            }
+        }
+        if ((status == "live" || status == "liveRestored") && !audioStarted) {
             audioStarted = true
             mainHandler.post { startAudioCapture(currentBitrateKbps) }
         }
@@ -328,8 +369,22 @@ class BroadcastService : Service() {
         }
 
         val bufferSize = minBufferSize.coerceAtLeast(SAMPLE_RATE / 10)
+        val sourceLabel = if (lastAudioInput.contains("USB", ignoreCase = true)) {
+            "USB"
+        } else if (audioProcessingConfig.audioSource == android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION) {
+            "VOICE_COMMUNICATION"
+        } else {
+            "MIC"
+        }
+        BroadcastLogEvents.send(
+            "[AUDIO INPUT]\n" +
+                "source=$sourceLabel\n" +
+                "sampleRate=$SAMPLE_RATE\n" +
+                "channel=mono\n" +
+                "pcmFormat=16bit"
+        )
         val recorder = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            audioProcessingConfig.audioSource,
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -342,6 +397,12 @@ class BroadcastService : Service() {
             BroadcastAudioLevelEvents.send(0.0)
             return
         }
+        AudioEffectsSupport.logAvailability()
+        noiseSuppressor = AudioEffectsSupport.enableNoiseSuppressorIfNeeded(
+            recorder.audioSessionId,
+            audioProcessingConfig
+        )
+        val audioProcessor = AudioProcessor(SAMPLE_RATE, audioProcessingConfig)
 
         val encoder = AudioEncoder(SAMPLE_RATE, bitrateKbps) { frame ->
             icecastClient?.sendFrame(frame)
@@ -365,9 +426,13 @@ class BroadcastService : Service() {
             while (captureRunning) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0 && captureRunning) {
-                    BroadcastAudioLevelEvents.send(calculateLevel(buffer, read))
-                    audioRecorder?.writePcm(buffer, read)
-                    audioEncoder?.encodePcm(buffer, read)
+                    val processed = audioProcessor.process(buffer, read)
+                    val diagnostic = AudioDiagnostics.analyze(processed, processed.size)
+                    BroadcastAudioLevelEvents.send(AudioDiagnostics.levelFrom(diagnostic))
+                    BroadcastAudioDiagnosticEvents.send(diagnostic)
+                    logAudioDiagnostic(diagnostic)
+                    audioRecorder?.writePcm(processed, processed.size)
+                    audioEncoder?.encodePcm(processed, processed.size)
                 }
             }
         }.apply {
@@ -391,6 +456,8 @@ class BroadcastService : Service() {
 
         runCatching { audioEncoder?.stop() }
         audioEncoder = null
+        runCatching { noiseSuppressor?.release() }
+        noiseSuppressor = null
 
         audioRecorder?.let { recorder ->
             recordingBytes = recorder.recordedBytes
@@ -445,11 +512,14 @@ class BroadcastService : Service() {
             lastStatsAtMs = System.currentTimeMillis()
             averageUploadKbps = 0.0
             reconnectCount = 0
+            reconnectAttempt = 0
+            nextReconnectDelayMs = 0L
             recordingFilePath = ""
             recordingBytes = 0L
             lastStatus = "connecting"
+            lastAudioDiagnosticLogAtMs = 0L
         }
-        BroadcastStatsEvents.send(0L, 0.0, 0.0, 0, "", 0L)
+        BroadcastStatsEvents.send(0L, 0.0, 0.0, 0, 0, 0L, "", 0L)
     }
 
     private fun sendStatsSnapshot() {
@@ -487,6 +557,8 @@ class BroadcastService : Service() {
                 uploadSpeedKbps = speedKbps,
                 averageUploadKbps = averageUploadKbps,
                 reconnectCount = reconnectCount,
+                reconnectAttempt = reconnectAttempt,
+                nextReconnectDelayMs = nextReconnectDelayMs,
                 recordingFilePath = recordingFilePath,
                 recordingBytes = audioRecorder?.recordedBytes ?: recordingBytes
             )
@@ -497,6 +569,8 @@ class BroadcastService : Service() {
             uploadSpeedKbps = snapshot.uploadSpeedKbps,
             averageUploadKbps = snapshot.averageUploadKbps,
             reconnectCount = snapshot.reconnectCount,
+            reconnectAttempt = snapshot.reconnectAttempt,
+            nextReconnectDelayMs = snapshot.nextReconnectDelayMs,
             recordingFilePath = snapshot.recordingFilePath,
             recordingBytes = snapshot.recordingBytes
         )
@@ -504,6 +578,63 @@ class BroadcastService : Service() {
 
     private fun currentAppTxBytes(): Long {
         return TrafficStats.getUidTxBytes(applicationInfo.uid)
+    }
+
+    private fun startNetworkWatchdog() {
+        val manager = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        connectivityManager = manager
+        if (!hasValidatedInternet(manager)) {
+            BroadcastLogEvents.send("Jaringan terputus. Menunggu koneksi kembali.")
+            BroadcastStatusEvents.send("networkLost")
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (!isRunning) return
+                mainHandler.postDelayed({
+                    if (!isRunning) return@postDelayed
+                    if (hasValidatedInternet(manager) &&
+                        BroadcastStatusEvents.currentStatus == "networkLost"
+                    ) {
+                        BroadcastLogEvents.send("Jaringan kembali. Mencoba reconnect otomatis.")
+                        BroadcastStatusEvents.send("reconnecting")
+                        icecastClient?.forceReconnect("network restored")
+                    }
+                }, 600)
+            }
+
+            override fun onLost(network: Network) {
+                if (!isRunning || !audioStarted) return
+                mainHandler.post {
+                    if (!isRunning || hasValidatedInternet(manager)) return@post
+                    BroadcastLogEvents.send("Jaringan terputus. Menunggu koneksi kembali.")
+                    BroadcastStatusEvents.send("networkLost")
+                    icecastClient?.forceReconnect("network lost")
+                    sendStatsSnapshot()
+                }
+            }
+        }
+
+        runCatching {
+            manager.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        }.onFailure {
+            BroadcastLogEvents.send("Network Watchdog fallback ke socket watchdog.")
+        }
+    }
+
+    private fun stopNetworkWatchdog() {
+        val callback = networkCallback ?: return
+        runCatching { connectivityManager?.unregisterNetworkCallback(callback) }
+        networkCallback = null
+        connectivityManager = null
+    }
+
+    private fun hasValidatedInternet(manager: ConnectivityManager): Boolean {
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun sanitizeHost(rawHost: String): String {
@@ -515,15 +646,17 @@ class BroadcastService : Service() {
             .substringBefore(":")
     }
 
-    private fun calculateLevel(buffer: ShortArray, read: Int): Double {
-        var sum = 0.0
-        for (index in 0 until read) {
-            val sample = buffer[index].toDouble() / Short.MAX_VALUE
-            sum += sample * sample
-        }
-
-        val rms = sqrt(sum / read)
-        return (rms * 3.2).coerceIn(0.0, 1.0)
+    private fun logAudioDiagnostic(diagnostic: AudioDiagnosticSnapshot) {
+        val now = System.currentTimeMillis()
+        if (now - lastAudioDiagnosticLogAtMs < AUDIO_DIAGNOSTIC_LOG_INTERVAL_MS) return
+        lastAudioDiagnosticLogAtMs = now
+        BroadcastLogEvents.send(
+            "[AUDIO LEVEL]\n" +
+                "rms=${"%.4f".format(diagnostic.rms)}\n" +
+                "peak=${"%.4f".format(diagnostic.peak)}\n" +
+                "clipping=${diagnostic.clipping}\n" +
+                "volumeStatus=${diagnostic.volumeStatus}"
+        )
     }
 
     private fun buildNotification() =
@@ -554,6 +687,7 @@ class BroadcastService : Service() {
     private fun isTerminalStatus(status: String): Boolean {
         return status == "authenticationFailed" ||
             status == "serverUnreachable" ||
+            status == "reconnectFailed" ||
             status == "timeout" ||
             status == "invalidConfig" ||
             status == "protocolRejected" ||
@@ -616,6 +750,12 @@ class BroadcastService : Service() {
         const val EXTRA_USERNAME = "username"
         const val EXTRA_PASSWORD = "password"
         const val EXTRA_BITRATE_KBPS = "bitrateKbps"
+        const val EXTRA_AUDIO_INPUT = "audioInput"
+        const val EXTRA_INPUT_GAIN_DB = "inputGainDb"
+        const val EXTRA_NOISE_SUPPRESSION_LEVEL = "noiseSuppressionLevel"
+        const val EXTRA_HIGH_PASS_FILTER_HZ = "highPassFilterHz"
+        const val EXTRA_LIMITER_ENABLED = "limiterEnabled"
+        const val EXTRA_AUDIO_SOURCE_MODE = "audioSourceMode"
         const val EXTRA_SERVER_TYPE = "serverType"
         const val EXTRA_USTADZ_NAME = "ustadzName"
         const val EXTRA_KAJIAN_TITLE = "kajianTitle"
@@ -627,6 +767,7 @@ class BroadcastService : Service() {
         const val DEFAULT_BITRATE_KBPS = 64
         private const val SAMPLE_RATE = 44100
         private const val STATS_INTERVAL_MS = 1000L
+        private const val AUDIO_DIAGNOSTIC_LOG_INTERVAL_MS = 1000L
         private const val CHANNEL_ID = "radio_taqriibussunnah_broadcast"
         private const val NOTIFICATION_ID = 2910
         private var isRunning = false
@@ -638,6 +779,8 @@ private data class StatsSnapshot(
     val uploadSpeedKbps: Double,
     val averageUploadKbps: Double,
     val reconnectCount: Int,
+    val reconnectAttempt: Int,
+    val nextReconnectDelayMs: Long,
     val recordingFilePath: String,
     val recordingBytes: Long
 )

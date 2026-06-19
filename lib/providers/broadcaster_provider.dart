@@ -20,6 +20,13 @@ enum StartBroadcastResult {
   microphonePermanentlyDenied,
 }
 
+enum TestRecordingStartResult {
+  started,
+  microphoneDenied,
+  microphonePermanentlyDenied,
+  nativeUnavailable,
+}
+
 class BroadcasterProvider extends ChangeNotifier {
   BroadcasterProvider({
     ConfigStorageService? configStorageService,
@@ -40,6 +47,9 @@ class BroadcasterProvider extends ChangeNotifier {
     );
     _nativeAudioLevelSubscription = _nativeBroadcastService.audioLevelStream
         .listen(_handleNativeAudioLevel, onError: (_) {});
+    _nativeAudioDiagnosticSubscription = _nativeBroadcastService
+        .audioDiagnosticStream
+        .listen(_handleNativeAudioDiagnostic, onError: (_) {});
     _nativeStatsSubscription = _nativeBroadcastService.statsStream.listen(
       _handleNativeStats,
       onError: (_) {},
@@ -61,6 +71,7 @@ class BroadcasterProvider extends ChangeNotifier {
   Timer? _timer;
   StreamSubscription<ConnectionStatus>? _nativeStatusSubscription;
   StreamSubscription<double>? _nativeAudioLevelSubscription;
+  StreamSubscription<AudioDiagnostic>? _nativeAudioDiagnosticSubscription;
   StreamSubscription<NativeBroadcastStats>? _nativeStatsSubscription;
   StreamSubscription<String>? _nativeLogSubscription;
   DateTime? _startedAt;
@@ -77,17 +88,25 @@ class BroadcasterProvider extends ChangeNotifier {
   bool isLoading = true;
   Duration duration = Duration.zero;
   double audioLevel = 0.18;
+  double audioRms = 0;
+  double audioPeak = 0;
+  bool audioClipping = false;
+  String audioVolumeStatus = 'small';
   int totalUploadBytes = 0;
   double uploadSpeedKbps = 0;
   double averageUploadKbps = 0;
   String networkType = 'Unknown';
   int reconnectCount = 0;
+  int reconnectAttempt = 0;
+  int nextReconnectDelayMs = 0;
   String recordingFilePath = '';
   int recordingBytes = 0;
   String ustadzName = '';
   String kajianTitle = '';
   String kajianTheme = '';
   String liveMetadata = liveMetadataFallback;
+  bool isTestRecording = false;
+  TestRecordingResult? testRecording;
   List<BroadcastLog> logs = [];
 
   String get host => config.host;
@@ -100,11 +119,28 @@ class BroadcasterProvider extends ChangeNotifier {
   String get serverType => config.serverType;
   double get totalUploadMb => totalUploadBytes / 1024 / 1024;
   double get recordingMb => recordingBytes / 1024 / 1024;
+  String get audioVolumeStatusLabel {
+    return switch (audioVolumeStatus) {
+      'safe' => 'Aman',
+      'clipping' => 'Terlalu keras',
+      _ => 'Terlalu kecil',
+    };
+  }
+
+  String get audioVolumeStatusMessage {
+    return switch (audioVolumeStatus) {
+      'safe' => 'Level suara aman untuk siaran.',
+      'clipping' => 'Suara terlalu keras, kecilkan gain atau volume mixer.',
+      _ => 'Suara terlalu kecil, dekatkan mic atau naikkan gain sedikit.',
+    };
+  }
 
   bool get isLive => status == ConnectionStatus.live;
   bool get isBusy =>
       status == ConnectionStatus.connecting ||
-      status == ConnectionStatus.reconnecting;
+      status == ConnectionStatus.networkLost ||
+      status == ConnectionStatus.reconnecting ||
+      status == ConnectionStatus.liveRestored;
   bool get hasCompleteConfig => config.isComplete;
 
   double get estimatedDataPerHourMb {
@@ -137,8 +173,10 @@ class BroadcasterProvider extends ChangeNotifier {
       _nativeServiceRunning =
           nativeStatus == ConnectionStatus.connecting ||
           nativeStatus == ConnectionStatus.live ||
+          nativeStatus == ConnectionStatus.networkLost ||
           nativeStatus == ConnectionStatus.reconnecting;
-      if (nativeStatus == ConnectionStatus.live) {
+      if (nativeStatus == ConnectionStatus.live ||
+          nativeStatus == ConnectionStatus.liveRestored) {
         _startedAt ??= DateTime.now();
         _startStatsTimer();
       }
@@ -216,6 +254,12 @@ class BroadcasterProvider extends ChangeNotifier {
       username: nextConfig.username.trim(),
       audioInput: nextConfig.audioInput.trim(),
       serverType: nextConfig.serverType,
+      audioPreset: nextConfig.audioPreset,
+      inputGainDb: nextConfig.inputGainDb.clamp(-12, 12).toDouble(),
+      noiseSuppressionLevel: nextConfig.noiseSuppressionLevel,
+      highPassFilterHz: nextConfig.highPassFilterHz,
+      limiterEnabled: nextConfig.limiterEnabled,
+      audioSourceMode: nextConfig.audioSourceMode,
     );
     config = normalizedConfig;
     await _configStorageService.saveConfig(normalizedConfig);
@@ -310,7 +354,8 @@ class BroadcasterProvider extends ChangeNotifier {
     if (!isLive &&
         !isBusy &&
         status != ConnectionStatus.connectionDropped &&
-        status != ConnectionStatus.timeout) {
+        status != ConnectionStatus.timeout &&
+        status != ConnectionStatus.reconnectFailed) {
       return;
     }
 
@@ -333,6 +378,61 @@ class BroadcasterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<TestRecordingStartResult> startTestRecording() async {
+    if (isTestRecording) return TestRecordingStartResult.started;
+
+    final micPermission = await _microphonePermissionService
+        .requestPermission();
+    if (micPermission != MicrophonePermissionResult.granted) {
+      status = ConnectionStatus.microphoneDenied;
+      notifyListeners();
+      return micPermission == MicrophonePermissionResult.permanentlyDenied
+          ? TestRecordingStartResult.microphonePermanentlyDenied
+          : TestRecordingStartResult.microphoneDenied;
+    }
+
+    isTestRecording = true;
+    testRecording = null;
+    audioRms = 0;
+    audioPeak = 0;
+    audioClipping = false;
+    audioVolumeStatus = 'small';
+    notifyListeners();
+
+    final result = await _nativeBroadcastService.startTestRecording(
+      config: config,
+    );
+
+    isTestRecording = false;
+    if (result == null) {
+      notifyListeners();
+      return TestRecordingStartResult.nativeUnavailable;
+    }
+
+    testRecording = result;
+    notifyListeners();
+    return TestRecordingStartResult.started;
+  }
+
+  Future<bool> playTestRecording() async {
+    final recording = testRecording;
+    if (recording == null) return false;
+    return _nativeBroadcastService.playTestRecording(recording.filePath);
+  }
+
+  Future<bool> deleteTestRecording() async {
+    final recording = testRecording;
+    if (recording == null) return false;
+    final didDelete = await _nativeBroadcastService.deleteTestRecording(
+      recording.filePath,
+    );
+    if (didDelete) {
+      testRecording = null;
+      notifyListeners();
+    }
+    return didDelete;
+  }
+
   void _prepareNewSession() {
     status = ConnectionStatus.connecting;
     testResultStatus = ConnectionStatus.offline;
@@ -345,6 +445,8 @@ class BroadcasterProvider extends ChangeNotifier {
     uploadSpeedKbps = 0;
     averageUploadKbps = 0;
     reconnectCount = 0;
+    reconnectAttempt = 0;
+    nextReconnectDelayMs = 0;
     recordingFilePath = '';
     recordingBytes = 0;
     _startedAt = DateTime.now();
@@ -372,7 +474,9 @@ class BroadcasterProvider extends ChangeNotifier {
       _startedAt ??= DateTime.now();
     }
     if (nativeStatus == ConnectionStatus.live ||
-        nativeStatus == ConnectionStatus.reconnecting) {
+        nativeStatus == ConnectionStatus.networkLost ||
+        nativeStatus == ConnectionStatus.reconnecting ||
+        nativeStatus == ConnectionStatus.liveRestored) {
       _nativeServiceRunning = true;
       _usingNativeAudioLevel = true;
       _usingNativeStats = true;
@@ -395,6 +499,7 @@ class BroadcasterProvider extends ChangeNotifier {
         nextStatus == ConnectionStatus.offline ||
         nextStatus == ConnectionStatus.authenticationFailed ||
         nextStatus == ConnectionStatus.serverUnreachable ||
+        nextStatus == ConnectionStatus.reconnectFailed ||
         nextStatus == ConnectionStatus.timeout ||
         nextStatus == ConnectionStatus.invalidConfig ||
         nextStatus == ConnectionStatus.protocolRejected ||
@@ -402,9 +507,21 @@ class BroadcasterProvider extends ChangeNotifier {
   }
 
   void _handleNativeAudioLevel(double level) {
-    if (!_nativeServiceRunning && status != ConnectionStatus.live) return;
+    if (!_nativeServiceRunning &&
+        status != ConnectionStatus.live &&
+        !isTestRecording) {
+      return;
+    }
     _usingNativeAudioLevel = true;
     audioLevel = level;
+    notifyListeners();
+  }
+
+  void _handleNativeAudioDiagnostic(AudioDiagnostic diagnostic) {
+    audioRms = diagnostic.rms;
+    audioPeak = diagnostic.peak;
+    audioClipping = diagnostic.clipping;
+    audioVolumeStatus = diagnostic.volumeStatus;
     notifyListeners();
   }
 
@@ -414,6 +531,8 @@ class BroadcasterProvider extends ChangeNotifier {
     uploadSpeedKbps = stats.uploadSpeedKbps;
     averageUploadKbps = stats.averageUploadKbps;
     reconnectCount = stats.reconnectCount;
+    reconnectAttempt = stats.reconnectAttempt;
+    nextReconnectDelayMs = stats.nextReconnectDelayMs;
     recordingFilePath = stats.recordingFilePath;
     recordingBytes = stats.recordingBytes;
     notifyListeners();
@@ -464,7 +583,9 @@ class BroadcasterProvider extends ChangeNotifier {
 
   void _tick() {
     if (status != ConnectionStatus.live &&
-        status != ConnectionStatus.reconnecting) {
+        status != ConnectionStatus.networkLost &&
+        status != ConnectionStatus.reconnecting &&
+        status != ConnectionStatus.liveRestored) {
       return;
     }
 
@@ -517,6 +638,7 @@ class BroadcasterProvider extends ChangeNotifier {
     _timer?.cancel();
     _nativeStatusSubscription?.cancel();
     _nativeAudioLevelSubscription?.cancel();
+    _nativeAudioDiagnosticSubscription?.cancel();
     _nativeStatsSubscription?.cancel();
     _nativeLogSubscription?.cancel();
     super.dispose();

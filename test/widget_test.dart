@@ -47,6 +47,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Live Broadcast'), findsOneWidget);
+    expect(find.text('Kualitas Audio'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Monitoring Internet'),
+      260,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Monitoring Internet'), findsOneWidget);
 
     await tester.scrollUntilVisible(
@@ -170,6 +177,8 @@ void main() {
           uploadSpeedKbps: 64,
           averageUploadKbps: 64,
           reconnectCount: 0,
+          reconnectAttempt: 0,
+          nextReconnectDelayMs: 0,
           recordingFilePath: '',
           recordingBytes: 0,
         ),
@@ -196,6 +205,12 @@ const _workingIcecastConfig = BroadcasterConfig(
   bitrate: 64,
   audioInput: 'Mic HP',
   serverType: BroadcasterConfig.icecast,
+  audioPreset: BroadcasterConfig.presetStandarKajian,
+  inputGainDb: 0,
+  noiseSuppressionLevel: BroadcasterConfig.noiseLow,
+  highPassFilterHz: 80,
+  limiterEnabled: true,
+  audioSourceMode: BroadcasterConfig.audioSourceNatural,
 );
 
 BroadcasterProvider _buildProvider({
@@ -230,6 +245,12 @@ class _FakeConfigStorageService extends ConfigStorageService {
             bitrate: 64,
             audioInput: 'Mic HP',
             serverType: BroadcasterConfig.shoutcast,
+            audioPreset: BroadcasterConfig.presetStandarKajian,
+            inputGainDb: 0,
+            noiseSuppressionLevel: BroadcasterConfig.noiseLow,
+            highPassFilterHz: 80,
+            limiterEnabled: true,
+            audioSourceMode: BroadcasterConfig.audioSourceNatural,
           );
 
   BroadcasterConfig _config;
@@ -282,6 +303,8 @@ class _FakeMicrophonePermissionService extends MicrophonePermissionService {
 class _FakeNativeBroadcastService extends NativeBroadcastService {
   final _statusController = StreamController<ConnectionStatus>.broadcast();
   final _audioLevelController = StreamController<double>.broadcast();
+  final _audioDiagnosticController =
+      StreamController<AudioDiagnostic>.broadcast();
   final _statsController = StreamController<NativeBroadcastStats>.broadcast();
   final _logController = StreamController<String>.broadcast();
 
@@ -299,6 +322,10 @@ class _FakeNativeBroadcastService extends NativeBroadcastService {
 
   @override
   Stream<double> get audioLevelStream => _audioLevelController.stream;
+
+  @override
+  Stream<AudioDiagnostic> get audioDiagnosticStream =>
+      _audioDiagnosticController.stream;
 
   @override
   Stream<NativeBroadcastStats> get statsStream => _statsController.stream;

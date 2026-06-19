@@ -471,3 +471,188 @@ No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk
 ```
+
+## Patch build-info-01
+
+Instruksi:
+
+- Caveman mode, perubahan sekecil mungkin.
+- Jangan ubah broadcast connection, audio engine, atau metadata flow.
+- Tambahkan informasi build yang terlihat di aplikasi.
+- Tambahkan model, service, changelog, tombol salin info build, dan version `0.8.4+24`.
+
+Hasil:
+
+- `package_info_plus` ditambahkan untuk membaca app name, package name, version, dan build number.
+- `BuildInfoModel` ditambahkan sebagai immutable model dengan `copyWith()` dan `toString()`.
+- `BuildInfoService` membaca `PackageInfo` dan dart-define:
+  - `BUILD_CHANNEL`
+  - `PATCH_NAME`
+  - `ENVIRONMENT`
+  - `BUILD_DATE`
+  - `GIT_COMMIT`
+- `appChangelog` ditambahkan dengan patch `build-info-01`.
+- LogPage tab Riwayat menampilkan card `Informasi Build` di bawah log.
+- Tombol `Salin Info Build` menyalin identitas APK ke clipboard.
+- Changelog terbaru tampil maksimal 5 catatan.
+- `pubspec.yaml` diupdate ke `version: 0.8.4+24`.
+
+Verifikasi:
+
+```powershell
+flutter clean
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug --dart-define=BUILD_CHANNEL=debug --dart-define=PATCH_NAME=build-info-01 --dart-define=ENVIRONMENT=internal-test --dart-define=BUILD_DATE=2026-06-19 --dart-define=GIT_COMMIT=local
+```
+
+Output penting:
+
+```text
+Got dependencies!
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```
+
+## Step 2: Live Reconnect Protection
+
+Instruksi:
+
+- Jangan ubah handshake koneksi yang sudah berhasil.
+- Tambahkan perlindungan saat jaringan HP putus sebentar.
+- Foreground service, AudioRecord, encoder, dan rekaman lokal harus tetap berjalan saat reconnect.
+- Tambahkan status `networkLost`, `reconnecting`, `liveRestored`, dan `reconnectFailed`.
+- Reconnect hanya untuk gangguan sementara, bukan authentication/config/protocol/codec error.
+- Gunakan reconnect policy maksimal 10 attempt dengan delay 500 ms, 1 detik, 2 detik, 3 detik, 5 detik, 10 detik, 15 detik, 20 detik, 30 detik, 30 detik.
+- Tambahkan Network Watchdog, Socket Watchdog, buffer output kecil, dan warning README tentang batasan AutoDJ.
+
+Hasil:
+
+- Flutter mengenali status baru `networkLost`, `liveRestored`, dan `reconnectFailed`.
+- Tombol utama tetap `Stop Siaran` saat network lost/reconnecting/live restored.
+- Monitoring internet menampilkan attempt reconnect aktif dan delay berikutnya.
+- Native `BroadcastService` menambahkan Network Watchdog berbasis `ConnectivityManager.NetworkCallback` pada Android N ke atas, dengan fallback deteksi socket write failure.
+- Saat jaringan hilang, status menjadi `networkLost` dan socket lama ditutup aman agar client masuk reconnect tanpa menghentikan audio capture, encoder, atau rekaman lokal.
+- `IcecastClient` memakai reconnect policy 10 attempt sesuai delay instruksi.
+- Handshake SHOUTcast dan Icecast/AzuraCast tetap memakai jalur lama yang sudah berhasil.
+- Buffer frame AAC dibatasi sekitar beberapa detik; saat penuh frame lama dibuang dan log `Output buffer penuh, frame lama dibuang.` dikirim.
+- Saat reconnect berhasil, handshake mengirim ulang metadata terakhir dan status menjadi `liveRestored`.
+- `reconnectCount` bertambah saat reconnect berhasil, sedangkan attempt aktif dikirim sebagai telemetry terpisah.
+- Jika reconnect gagal setelah batas attempt, status menjadi `reconnectFailed` dan service berhenti aman dengan log sesi tersimpan.
+- README menambahkan warning bahwa aplikasi tidak bisa sepenuhnya mencegah AutoDJ masuk jika server sudah melihat source live disconnect, serta menyarankan grace/delay fallback AutoDJ atau relay VPS.
+
+Verifikasi wajib:
+
+```powershell
+dart.bat format lib test
+flutter clean
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Output penting:
+
+```text
+Formatted 21 files
+Got dependencies!
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```
+
+## Step 3: Audio Diagnostic + Test Recording 15 Detik
+
+Instruksi:
+
+- Fokus hanya diagnosa audio.
+- Jangan ubah handshake koneksi yang sudah berhasil.
+- Tambahkan Tes Rekam 15 Detik sebelum live.
+- Tampilkan hasil test recording: nama file, path file, ukuran file, durasi, tombol Putar, dan tombol Hapus.
+- Tambahkan status volume berdasarkan PCM input: terlalu kecil, aman, terlalu keras.
+- Deteksi clipping jika sample PCM sering mendekati batas maksimum.
+- Tambahkan log `[AUDIO INPUT]`, `[AUDIO LEVEL]`, dan `[TEST RECORDING]`.
+
+Hasil:
+
+- LivePage menambahkan section `Kualitas Audio`.
+- Tombol `Tes Rekam 15 Detik` meminta izin microphone, lalu memanggil native recorder.
+- Native membuat file WAV test di folder app external files `Music/test-recordings`.
+- Hasil test recording menampilkan nama file, path, ukuran, durasi, tombol Putar, dan tombol Hapus.
+- Tombol Putar memakai native `MediaPlayer`.
+- Tombol Hapus menghapus file WAV test dari storage aplikasi.
+- Native menambahkan EventChannel audio diagnostic berisi RMS, peak, clipping, dan volume status.
+- Provider Flutter menampilkan status volume `Terlalu kecil`, `Aman`, atau `Terlalu keras` beserta pesan operator.
+- Broadcast live juga mengirim diagnostic audio yang sama, tanpa mengubah handshake server.
+- Log native menambahkan:
+  - `[AUDIO INPUT] source=... sampleRate=44100 channel=mono pcmFormat=16bit`
+  - `[AUDIO LEVEL] rms=... peak=... clipping=... volumeStatus=...`
+  - `[TEST RECORDING] file=... size=... duration=...`
+
+Verifikasi wajib:
+
+```powershell
+dart.bat format lib test
+flutter clean
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Output penting:
+
+```text
+Formatted 21 files
+Got dependencies!
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```
+
+## Step 4: Audio Quality Control + Filter Suara
+
+Instruksi:
+
+- Jangan ubah koneksi, metadata, atau desain besar-besaran.
+- Tambahkan UI Kualitas Audio: preset, input gain, noise suppression, high-pass filter, limiter, dan audio source mode.
+- Simpan setting audio ke `SharedPreferences`.
+- Native menerima setting audio aktif.
+- Broadcast dan test recording memakai setting audio aktif.
+- Cek availability NoiseSuppressor, AGC, dan AEC, tanpa crash jika tidak tersedia.
+
+Hasil:
+
+- `BroadcasterConfig` menambahkan setting audio dengan default Standar Kajian / 64 kbps.
+- `ConfigStorageService` menyimpan `audioPreset`, `inputGainDb`, `noiseSuppressionLevel`, `highPassFilterHz`, `limiterEnabled`, dan `audioSourceMode`.
+- SetupPage menambahkan section `Kualitas Audio` tanpa mengubah alur koneksi.
+- Preset audio mengatur bitrate dan pilihan processing awal:
+  - Hemat Data: 32 kbps, Low, 80 Hz, limiter On
+  - Standar Kajian: 64 kbps, Low, 80 Hz, limiter On
+  - Jernih: 96 kbps, Low, 80 Hz, limiter On
+  - Maksimal: 128 kbps, Off, 80 Hz, limiter On
+- Native menerima setting audio lewat MethodChannel start broadcast dan test recording.
+- `AudioProcessing.kt` ditambahkan untuk high-pass filter ringan, input gain, dan soft limiter sebelum recorder/encoder.
+- Broadcast live dan test recording memakai PCM hasil processing yang sama.
+- NoiseSuppressor Android diaktifkan hanya jika tersedia dan level bukan Off.
+- AGC dan AEC hanya dicek availability dan dilog; tidak aktif default.
+- Handshake Icecast/SHOUTcast dan metadata tidak diubah.
+
+Verifikasi:
+
+```powershell
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Output penting:
+
+```text
+No issues found!
+All tests passed!
+Built build\app\outputs\flutter-apk\app-debug.apk
+```

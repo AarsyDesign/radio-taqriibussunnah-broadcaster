@@ -23,6 +23,12 @@ class _SetupPageState extends State<SetupPage> {
   int _bitrate = 64;
   String _audioInput = 'Mic HP';
   String _serverType = BroadcasterConfig.shoutcast;
+  String _audioPreset = BroadcasterConfig.presetStandarKajian;
+  double _inputGainDb = 0;
+  String _noiseSuppressionLevel = BroadcasterConfig.noiseLow;
+  int _highPassFilterHz = 80;
+  bool _limiterEnabled = true;
+  String _audioSourceMode = BroadcasterConfig.audioSourceNatural;
   bool _obscurePassword = true;
   bool _didApplyStoredConfig = false;
 
@@ -38,6 +44,12 @@ class _SetupPageState extends State<SetupPage> {
     _bitrate = provider.bitrate;
     _audioInput = provider.audioInput;
     _serverType = provider.serverType;
+    _audioPreset = provider.config.audioPreset;
+    _inputGainDb = provider.config.inputGainDb;
+    _noiseSuppressionLevel = provider.config.noiseSuppressionLevel;
+    _highPassFilterHz = provider.config.highPassFilterHz;
+    _limiterEnabled = provider.config.limiterEnabled;
+    _audioSourceMode = provider.config.audioSourceMode;
   }
 
   @override
@@ -225,6 +237,37 @@ class _SetupPageState extends State<SetupPage> {
                   },
                 ),
                 const SizedBox(height: 18),
+                _AudioQualitySection(
+                  audioPreset: _audioPreset,
+                  inputGainDb: _inputGainDb,
+                  noiseSuppressionLevel: _noiseSuppressionLevel,
+                  highPassFilterHz: _highPassFilterHz,
+                  limiterEnabled: _limiterEnabled,
+                  audioSourceMode: _audioSourceMode,
+                  onPresetChanged: _applyAudioPreset,
+                  onGainChanged: (value) {
+                    setState(() => _inputGainDb = value);
+                  },
+                  onNoiseChanged: (value) {
+                    if (value != null) {
+                      setState(() => _noiseSuppressionLevel = value);
+                    }
+                  },
+                  onHighPassChanged: (value) {
+                    if (value != null) {
+                      setState(() => _highPassFilterHz = value);
+                    }
+                  },
+                  onLimiterChanged: (value) {
+                    setState(() => _limiterEnabled = value);
+                  },
+                  onAudioSourceModeChanged: (value) {
+                    if (value != null) {
+                      setState(() => _audioSourceMode = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 18),
                 _TestResultBanner(result: provider.testResultStatus),
                 const SizedBox(height: 18),
                 OutlinedButton.icon(
@@ -267,7 +310,40 @@ class _SetupPageState extends State<SetupPage> {
         _bitrate = provider.bitrate;
         _audioInput = provider.audioInput;
         _serverType = provider.serverType;
+        _audioPreset = provider.config.audioPreset;
+        _inputGainDb = provider.config.inputGainDb;
+        _noiseSuppressionLevel = provider.config.noiseSuppressionLevel;
+        _highPassFilterHz = provider.config.highPassFilterHz;
+        _limiterEnabled = provider.config.limiterEnabled;
+        _audioSourceMode = provider.config.audioSourceMode;
       });
+    });
+  }
+
+  void _applyAudioPreset(String? preset) {
+    if (preset == null) return;
+    setState(() {
+      _audioPreset = preset;
+      _inputGainDb = 0;
+      _limiterEnabled = true;
+      _highPassFilterHz = 80;
+      switch (preset) {
+        case BroadcasterConfig.presetHematData:
+          _bitrate = 32;
+          _noiseSuppressionLevel = BroadcasterConfig.noiseLow;
+          break;
+        case BroadcasterConfig.presetJernih:
+          _bitrate = 96;
+          _noiseSuppressionLevel = BroadcasterConfig.noiseLow;
+          break;
+        case BroadcasterConfig.presetMaksimal:
+          _bitrate = 128;
+          _noiseSuppressionLevel = BroadcasterConfig.noiseOff;
+          break;
+        default:
+          _bitrate = 64;
+          _noiseSuppressionLevel = BroadcasterConfig.noiseLow;
+      }
     });
   }
 
@@ -297,6 +373,12 @@ class _SetupPageState extends State<SetupPage> {
       bitrate: _bitrate,
       audioInput: _audioInput,
       serverType: _serverType,
+      audioPreset: _audioPreset,
+      inputGainDb: _inputGainDb,
+      noiseSuppressionLevel: _noiseSuppressionLevel,
+      highPassFilterHz: _highPassFilterHz,
+      limiterEnabled: _limiterEnabled,
+      audioSourceMode: _audioSourceMode,
     );
   }
 
@@ -322,6 +404,179 @@ class _SetupPageState extends State<SetupPage> {
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+}
+
+class _AudioQualitySection extends StatelessWidget {
+  const _AudioQualitySection({
+    required this.audioPreset,
+    required this.inputGainDb,
+    required this.noiseSuppressionLevel,
+    required this.highPassFilterHz,
+    required this.limiterEnabled,
+    required this.audioSourceMode,
+    required this.onPresetChanged,
+    required this.onGainChanged,
+    required this.onNoiseChanged,
+    required this.onHighPassChanged,
+    required this.onLimiterChanged,
+    required this.onAudioSourceModeChanged,
+  });
+
+  final String audioPreset;
+  final double inputGainDb;
+  final String noiseSuppressionLevel;
+  final int highPassFilterHz;
+  final bool limiterEnabled;
+  final String audioSourceMode;
+  final ValueChanged<String?> onPresetChanged;
+  final ValueChanged<double> onGainChanged;
+  final ValueChanged<String?> onNoiseChanged;
+  final ValueChanged<int?> onHighPassChanged;
+  final ValueChanged<bool> onLimiterChanged;
+  final ValueChanged<String?> onAudioSourceModeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.tune_rounded, color: AppTheme.forest),
+                const SizedBox(width: 8),
+                Text(
+                  'Kualitas Audio',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: audioPreset,
+              decoration: const InputDecoration(
+                labelText: 'Preset Audio',
+                prefixIcon: Icon(Icons.equalizer_rounded),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: BroadcasterConfig.presetHematData,
+                  child: Text(BroadcasterConfig.presetHematData),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.presetStandarKajian,
+                  child: Text(BroadcasterConfig.presetStandarKajian),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.presetJernih,
+                  child: Text(BroadcasterConfig.presetJernih),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.presetMaksimal,
+                  child: Text(BroadcasterConfig.presetMaksimal),
+                ),
+              ],
+              onChanged: onPresetChanged,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Input Gain ${inputGainDb.toStringAsFixed(1)} dB',
+              style: const TextStyle(
+                color: AppTheme.ink,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Slider(
+              value: inputGainDb,
+              min: -12,
+              max: 12,
+              divisions: 48,
+              label: '${inputGainDb.toStringAsFixed(1)} dB',
+              onChanged: onGainChanged,
+            ),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: noiseSuppressionLevel,
+              decoration: const InputDecoration(
+                labelText: 'Noise Suppression',
+                prefixIcon: Icon(Icons.noise_control_off_rounded),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: BroadcasterConfig.noiseOff,
+                  child: Text(BroadcasterConfig.noiseOff),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.noiseLow,
+                  child: Text(BroadcasterConfig.noiseLow),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.noiseMedium,
+                  child: Text(BroadcasterConfig.noiseMedium),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.noiseHigh,
+                  child: Text(BroadcasterConfig.noiseHigh),
+                ),
+              ],
+              onChanged: onNoiseChanged,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              initialValue: highPassFilterHz,
+              decoration: const InputDecoration(
+                labelText: 'High-pass Filter',
+                prefixIcon: Icon(Icons.filter_alt_rounded),
+              ),
+              items: const [
+                DropdownMenuItem(value: 0, child: Text('Off')),
+                DropdownMenuItem(value: 80, child: Text('80 Hz')),
+                DropdownMenuItem(value: 100, child: Text('100 Hz')),
+              ],
+              onChanged: onHighPassChanged,
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: limiterEnabled,
+              onChanged: onLimiterChanged,
+              title: const Text('Limiter'),
+              secondary: const Icon(Icons.speed_rounded),
+            ),
+            const SizedBox(height: 4),
+            DropdownButtonFormField<String>(
+              initialValue: audioSourceMode,
+              decoration: const InputDecoration(
+                labelText: 'Audio Source Mode',
+                prefixIcon: Icon(Icons.mic_rounded),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: BroadcasterConfig.audioSourceNatural,
+                  child: Text('Natural / MIC'),
+                ),
+                DropdownMenuItem(
+                  value: BroadcasterConfig.audioSourceVoiceProcessing,
+                  child: Text('Voice Processing'),
+                ),
+              ],
+              onChanged: onAudioSourceModeChanged,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Jika suara terdengar robotik, turunkan Noise Suppression atau pilih Natural.',
+              style: TextStyle(
+                color: AppTheme.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

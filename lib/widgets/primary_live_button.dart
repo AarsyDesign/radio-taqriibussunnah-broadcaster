@@ -19,8 +19,10 @@ class PrimaryLiveButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isActive =
         status == ConnectionStatus.live ||
+        status == ConnectionStatus.networkLost ||
         status == ConnectionStatus.connecting ||
         status == ConnectionStatus.reconnecting ||
+        status == ConnectionStatus.liveRestored ||
         status == ConnectionStatus.connectionDropped;
 
     return SizedBox(

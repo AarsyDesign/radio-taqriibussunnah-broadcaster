@@ -8,11 +8,28 @@ class BroadcasterConfig {
     required this.bitrate,
     required this.audioInput,
     required this.serverType,
+    required this.audioPreset,
+    required this.inputGainDb,
+    required this.noiseSuppressionLevel,
+    required this.highPassFilterHz,
+    required this.limiterEnabled,
+    required this.audioSourceMode,
   });
 
   static const icecast = 'Icecast/AzuraCast';
   static const shoutcast = 'SHOUTcast';
   static const allowedBitrates = [32, 64, 96, 128];
+  static const presetHematData = 'Hemat Data';
+  static const presetStandarKajian = 'Standar Kajian';
+  static const presetJernih = 'Jernih';
+  static const presetMaksimal = 'Maksimal';
+  static const noiseOff = 'Off';
+  static const noiseLow = 'Low';
+  static const noiseMedium = 'Medium';
+  static const noiseHigh = 'High';
+  static const audioSourceNatural = 'Natural / MIC';
+  static const audioSourceVoiceProcessing =
+      'Voice Processing / VOICE_COMMUNICATION';
 
   final String host;
   final int port;
@@ -22,6 +39,12 @@ class BroadcasterConfig {
   final int bitrate;
   final String audioInput;
   final String serverType;
+  final String audioPreset;
+  final double inputGainDb;
+  final String noiseSuppressionLevel;
+  final int highPassFilterHz;
+  final bool limiterEnabled;
+  final String audioSourceMode;
 
   static const empty = BroadcasterConfig(
     host: '151.245.85.182',
@@ -32,6 +55,12 @@ class BroadcasterConfig {
     bitrate: 64,
     audioInput: 'Mic HP',
     serverType: shoutcast,
+    audioPreset: presetStandarKajian,
+    inputGainDb: 0,
+    noiseSuppressionLevel: noiseLow,
+    highPassFilterHz: 80,
+    limiterEnabled: true,
+    audioSourceMode: audioSourceNatural,
   );
 
   bool get isComplete =>
@@ -55,6 +84,12 @@ class BroadcasterConfig {
     int? bitrate,
     String? audioInput,
     String? serverType,
+    String? audioPreset,
+    double? inputGainDb,
+    String? noiseSuppressionLevel,
+    int? highPassFilterHz,
+    bool? limiterEnabled,
+    String? audioSourceMode,
   }) {
     return BroadcasterConfig(
       host: host ?? this.host,
@@ -65,6 +100,13 @@ class BroadcasterConfig {
       bitrate: bitrate ?? this.bitrate,
       audioInput: audioInput ?? this.audioInput,
       serverType: serverType ?? this.serverType,
+      audioPreset: audioPreset ?? this.audioPreset,
+      inputGainDb: inputGainDb ?? this.inputGainDb,
+      noiseSuppressionLevel:
+          noiseSuppressionLevel ?? this.noiseSuppressionLevel,
+      highPassFilterHz: highPassFilterHz ?? this.highPassFilterHz,
+      limiterEnabled: limiterEnabled ?? this.limiterEnabled,
+      audioSourceMode: audioSourceMode ?? this.audioSourceMode,
     );
   }
 }

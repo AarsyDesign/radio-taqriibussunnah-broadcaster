@@ -14,6 +14,12 @@ class ConfigStorageService {
   static const _bitrateKey = 'config_bitrate';
   static const _audioInputKey = 'config_audio_input';
   static const _serverTypeKey = 'config_server_type';
+  static const _audioPresetKey = 'config_audio_preset';
+  static const _inputGainDbKey = 'config_input_gain_db';
+  static const _noiseSuppressionLevelKey = 'config_noise_suppression_level';
+  static const _highPassFilterHzKey = 'config_high_pass_filter_hz';
+  static const _limiterEnabledKey = 'config_limiter_enabled';
+  static const _audioSourceModeKey = 'config_audio_source_mode';
   static const _passwordKey = 'config_password';
 
   final FlutterSecureStorage _secureStorage;
@@ -27,6 +33,15 @@ class ConfigStorageService {
     await prefs.setInt(_bitrateKey, config.bitrate);
     await prefs.setString(_audioInputKey, config.audioInput);
     await prefs.setString(_serverTypeKey, config.serverType);
+    await prefs.setString(_audioPresetKey, config.audioPreset);
+    await prefs.setDouble(_inputGainDbKey, config.inputGainDb);
+    await prefs.setString(
+      _noiseSuppressionLevelKey,
+      config.noiseSuppressionLevel,
+    );
+    await prefs.setInt(_highPassFilterHzKey, config.highPassFilterHz);
+    await prefs.setBool(_limiterEnabledKey, config.limiterEnabled);
+    await prefs.setString(_audioSourceModeKey, config.audioSourceMode);
 
     await _writePassword(config.password);
   }
@@ -48,6 +63,24 @@ class ConfigStorageService {
           prefs.getString(_audioInputKey) ?? BroadcasterConfig.empty.audioInput,
       serverType:
           prefs.getString(_serverTypeKey) ?? BroadcasterConfig.empty.serverType,
+      audioPreset:
+          prefs.getString(_audioPresetKey) ??
+          BroadcasterConfig.empty.audioPreset,
+      inputGainDb:
+          prefs.getDouble(_inputGainDbKey) ??
+          BroadcasterConfig.empty.inputGainDb,
+      noiseSuppressionLevel:
+          prefs.getString(_noiseSuppressionLevelKey) ??
+          BroadcasterConfig.empty.noiseSuppressionLevel,
+      highPassFilterHz:
+          prefs.getInt(_highPassFilterHzKey) ??
+          BroadcasterConfig.empty.highPassFilterHz,
+      limiterEnabled:
+          prefs.getBool(_limiterEnabledKey) ??
+          BroadcasterConfig.empty.limiterEnabled,
+      audioSourceMode:
+          prefs.getString(_audioSourceModeKey) ??
+          BroadcasterConfig.empty.audioSourceMode,
     );
   }
 
@@ -60,6 +93,12 @@ class ConfigStorageService {
     await prefs.remove(_bitrateKey);
     await prefs.remove(_audioInputKey);
     await prefs.remove(_serverTypeKey);
+    await prefs.remove(_audioPresetKey);
+    await prefs.remove(_inputGainDbKey);
+    await prefs.remove(_noiseSuppressionLevelKey);
+    await prefs.remove(_highPassFilterHzKey);
+    await prefs.remove(_limiterEnabledKey);
+    await prefs.remove(_audioSourceModeKey);
     await _deletePassword();
   }
 

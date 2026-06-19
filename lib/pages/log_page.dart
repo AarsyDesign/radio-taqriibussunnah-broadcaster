@@ -1,9 +1,13 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../constants/app_changelog.dart';
+import '../models/build_info_model.dart';
 import '../models/broadcast_log.dart';
 import '../models/connection_status.dart';
 import '../providers/broadcaster_provider.dart';
+import '../services/build_info_service.dart';
 import '../theme/app_theme.dart';
 
 class LogPage extends StatelessWidget {
@@ -72,15 +76,16 @@ class LogPage extends StatelessWidget {
 }
 
 class _BroadcastHistoryTab extends StatelessWidget {
-  const _BroadcastHistoryTab({required this.logs});
+  _BroadcastHistoryTab({required this.logs});
 
   final List<BroadcastLog> logs;
+  final BuildInfoService _buildInfoService = BuildInfoService();
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: logs.isEmpty ? 2 : logs.length + 1,
+      itemCount: logs.isEmpty ? 3 : logs.length + 2,
       separatorBuilder: (_, index) =>
           index == 0 ? const SizedBox(height: 16) : const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -104,12 +109,134 @@ class _BroadcastHistoryTab extends StatelessWidget {
           );
         }
 
+        final buildInfoIndex = logs.isEmpty ? 2 : logs.length + 1;
+        if (index == buildInfoIndex) {
+          return FutureBuilder<BuildInfoModel>(
+            future: _buildInfoService.loadBuildInfo(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
+              }
+              return _BuildInfoCard(buildInfo: snapshot.data!);
+            },
+          );
+        }
+
         if (logs.isEmpty) {
           return const _EmptyLogState();
         }
 
         return _LogCard(log: logs[index - 1]);
       },
+    );
+  }
+}
+
+class _BuildInfoCard extends StatelessWidget {
+  const _BuildInfoCard({required this.buildInfo});
+
+  final BuildInfoModel buildInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    final latestChangelog = appChangelog.first;
+    final notes = (latestChangelog['notes'] as List<String>).take(5).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppTheme.forest.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.info_outline, color: AppTheme.forest),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Informasi Build',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _LogRow(label: 'App Name', value: buildInfo.appName),
+            _LogRow(label: 'Version', value: buildInfo.versionName),
+            _LogRow(label: 'Build', value: buildInfo.buildNumber),
+            _LogRow(label: 'Channel', value: buildInfo.buildChannel),
+            _LogRow(label: 'Patch', value: buildInfo.patchName),
+            _LogRow(label: 'Environment', value: buildInfo.environment),
+            _LogRow(label: 'Build Date', value: buildInfo.buildDate),
+            _LogRow(label: 'Commit', value: buildInfo.gitCommit, isLast: true),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => _copyBuildInfo(context),
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('Salin Info Build'),
+            ),
+            const SizedBox(height: 16),
+            Text('Changelog', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            _LogRow(label: 'Patch', value: latestChangelog['patch'].toString()),
+            _LogRow(label: 'Date', value: latestChangelog['date'].toString()),
+            const SizedBox(height: 6),
+            ...notes.map(
+              (note) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ', style: TextStyle(color: AppTheme.muted)),
+                    Expanded(
+                      child: Text(
+                        note,
+                        style: const TextStyle(
+                          color: AppTheme.ink,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _copyBuildInfo(BuildContext context) async {
+    await Clipboard.setData(
+      ClipboardData(
+        text:
+            '${buildInfo.appName}\n'
+            'Version: ${buildInfo.versionName}\n'
+            'Build: ${buildInfo.buildNumber}\n'
+            'Channel: ${buildInfo.buildChannel}\n'
+            'Patch: ${buildInfo.patchName}\n'
+            'Environment: ${buildInfo.environment}\n'
+            'Build Date: ${buildInfo.buildDate}\n'
+            'Commit: ${buildInfo.gitCommit}',
+      ),
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Info build berhasil disalin.')),
     );
   }
 }

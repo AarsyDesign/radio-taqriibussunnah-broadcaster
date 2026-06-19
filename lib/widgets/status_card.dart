@@ -91,13 +91,16 @@ class StatusCard extends StatelessWidget {
   Color _statusColor(ConnectionStatus status) {
     return switch (status) {
       ConnectionStatus.live => AppTheme.leaf,
+      ConnectionStatus.liveRestored => AppTheme.leaf,
       ConnectionStatus.connecting ||
+      ConnectionStatus.networkLost ||
       ConnectionStatus.reconnecting => AppTheme.amber,
       ConnectionStatus.offline || ConnectionStatus.stopped => AppTheme.muted,
       ConnectionStatus.authenticationFailed ||
       ConnectionStatus.serverUnreachable ||
       ConnectionStatus.microphoneDenied ||
       ConnectionStatus.connectionDropped ||
+      ConnectionStatus.reconnectFailed ||
       ConnectionStatus.timeout ||
       ConnectionStatus.invalidConfig ||
       ConnectionStatus.protocolRejected ||
@@ -109,7 +112,10 @@ class StatusCard extends StatelessWidget {
   IconData _statusIcon(ConnectionStatus status) {
     return switch (status) {
       ConnectionStatus.live => Icons.podcasts_rounded,
+      ConnectionStatus.liveRestored => Icons.podcasts_rounded,
       ConnectionStatus.connecting => Icons.sync_rounded,
+      ConnectionStatus.networkLost =>
+        Icons.signal_wifi_connected_no_internet_4_rounded,
       ConnectionStatus.reconnecting => Icons.wifi_find_rounded,
       ConnectionStatus.offline => Icons.radio_button_unchecked_rounded,
       ConnectionStatus.stopped => Icons.stop_circle_outlined,
@@ -118,6 +124,7 @@ class StatusCard extends StatelessWidget {
       ConnectionStatus.microphoneDenied => Icons.mic_off_rounded,
       ConnectionStatus.connectionDropped =>
         Icons.signal_wifi_connected_no_internet_4_rounded,
+      ConnectionStatus.reconnectFailed => Icons.wifi_off_rounded,
       ConnectionStatus.timeout => Icons.timer_off_rounded,
       ConnectionStatus.invalidConfig => Icons.rule_folder_rounded,
       ConnectionStatus.protocolRejected => Icons.sync_problem_rounded,

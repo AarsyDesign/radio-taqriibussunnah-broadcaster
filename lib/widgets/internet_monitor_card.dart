@@ -49,6 +49,18 @@ class InternetMonitorCard extends StatelessWidget {
               value: provider.reconnectCount.toString(),
             ),
             _MonitorRow(
+              label: 'Attempt reconnect',
+              value: provider.reconnectAttempt == 0
+                  ? '-'
+                  : '${provider.reconnectAttempt}/10',
+            ),
+            _MonitorRow(
+              label: 'Delay berikutnya',
+              value: provider.nextReconnectDelayMs == 0
+                  ? '-'
+                  : _formatDelay(provider.nextReconnectDelayMs),
+            ),
+            _MonitorRow(
               label: 'Ukuran rekaman',
               value: '${provider.recordingMb.toStringAsFixed(2)} MB',
             ),
@@ -63,6 +75,12 @@ class InternetMonitorCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatDelay(int delayMs) {
+    if (delayMs < 1000) return '$delayMs ms';
+    final seconds = delayMs / 1000;
+    return '${seconds.toStringAsFixed(seconds.truncateToDouble() == seconds ? 0 : 1)} detik';
   }
 }
 

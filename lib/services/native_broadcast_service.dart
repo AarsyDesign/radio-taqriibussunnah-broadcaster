@@ -10,6 +10,7 @@ class NativeBroadcastService {
     MethodChannel? methodChannel,
     EventChannel? statusEventChannel,
     EventChannel? audioLevelEventChannel,
+    EventChannel? audioDiagnosticEventChannel,
     EventChannel? statsEventChannel,
     EventChannel? logEventChannel,
   }) : _methodChannel =
@@ -27,6 +28,11 @@ class NativeBroadcastService {
            const EventChannel(
              'com.radiotaqriibussunnah.broadcaster/audio_level_events',
            ),
+       _audioDiagnosticEventChannel =
+           audioDiagnosticEventChannel ??
+           const EventChannel(
+             'com.radiotaqriibussunnah.broadcaster/audio_diagnostic_events',
+           ),
        _statsEventChannel =
            statsEventChannel ??
            const EventChannel(
@@ -41,6 +47,7 @@ class NativeBroadcastService {
   final MethodChannel _methodChannel;
   final EventChannel _statusEventChannel;
   final EventChannel _audioLevelEventChannel;
+  final EventChannel _audioDiagnosticEventChannel;
   final EventChannel _statsEventChannel;
   final EventChannel _logEventChannel;
 
@@ -57,6 +64,18 @@ class NativeBroadcastService {
     });
   }
 
+  Stream<AudioDiagnostic> get audioDiagnosticStream {
+    return _audioDiagnosticEventChannel.receiveBroadcastStream().map((event) {
+      final map = Map<Object?, Object?>.from(event as Map<Object?, Object?>);
+      return AudioDiagnostic(
+        rms: (map['rms'] as num?)?.toDouble() ?? 0,
+        peak: (map['peak'] as num?)?.toDouble() ?? 0,
+        clipping: map['clipping'] == true,
+        volumeStatus: map['volumeStatus']?.toString() ?? 'small',
+      );
+    });
+  }
+
   Stream<NativeBroadcastStats> get statsStream {
     return _statsEventChannel.receiveBroadcastStream().map((event) {
       final map = Map<Object?, Object?>.from(event as Map<Object?, Object?>);
@@ -65,6 +84,9 @@ class NativeBroadcastService {
         uploadSpeedKbps: (map['uploadSpeedKbps'] as num?)?.toDouble() ?? 0,
         averageUploadKbps: (map['averageUploadKbps'] as num?)?.toDouble() ?? 0,
         reconnectCount: (map['reconnectCount'] as num?)?.toInt() ?? 0,
+        reconnectAttempt: (map['reconnectAttempt'] as num?)?.toInt() ?? 0,
+        nextReconnectDelayMs:
+            (map['nextReconnectDelayMs'] as num?)?.toInt() ?? 0,
         recordingFilePath: map['recordingFilePath']?.toString() ?? '',
         recordingBytes: (map['recordingBytes'] as num?)?.toInt() ?? 0,
       );
@@ -92,6 +114,13 @@ class NativeBroadcastService {
             'username': config.username,
             'password': config.password,
             'bitrate': config.bitrate,
+            'audioInput': config.audioInput,
+            'audioPreset': config.audioPreset,
+            'inputGainDb': config.inputGainDb,
+            'noiseSuppressionLevel': config.noiseSuppressionLevel,
+            'highPassFilterHz': config.highPassFilterHz,
+            'limiterEnabled': config.limiterEnabled,
+            'audioSourceMode': config.audioSourceMode,
             'serverType': config.serverType,
             'ustadzName': ustadzName,
             'kajianTitle': kajianTitle,
@@ -109,6 +138,59 @@ class NativeBroadcastService {
   Future<bool> stopBroadcastService() async {
     try {
       return await _methodChannel.invokeMethod<bool>('stopBroadcastService') ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<TestRecordingResult?> startTestRecording({
+    required BroadcasterConfig config,
+  }) async {
+    try {
+      final result = await _methodChannel
+          .invokeMethod<Map<Object?, Object?>>('startTestRecording', {
+            'audioInput': config.audioInput,
+            'inputGainDb': config.inputGainDb,
+            'noiseSuppressionLevel': config.noiseSuppressionLevel,
+            'highPassFilterHz': config.highPassFilterHz,
+            'limiterEnabled': config.limiterEnabled,
+            'audioSourceMode': config.audioSourceMode,
+          });
+      if (result == null) return null;
+      return TestRecordingResult(
+        fileName: result['fileName']?.toString() ?? '',
+        filePath: result['filePath']?.toString() ?? '',
+        sizeBytes: (result['sizeBytes'] as num?)?.toInt() ?? 0,
+        durationSeconds: (result['durationSeconds'] as num?)?.toInt() ?? 0,
+      );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  Future<bool> playTestRecording(String filePath) async {
+    try {
+      return await _methodChannel.invokeMethod<bool>('playTestRecording', {
+            'filePath': filePath,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<bool> deleteTestRecording(String filePath) async {
+    try {
+      return await _methodChannel.invokeMethod<bool>('deleteTestRecording', {
+            'filePath': filePath,
+          }) ??
           false;
     } on MissingPluginException {
       return false;
@@ -156,7 +238,10 @@ class NativeBroadcastService {
     return switch (value) {
       'connecting' => ConnectionStatus.connecting,
       'live' => ConnectionStatus.live,
+      'networkLost' => ConnectionStatus.networkLost,
       'reconnecting' => ConnectionStatus.reconnecting,
+      'liveRestored' => ConnectionStatus.liveRestored,
+      'reconnectFailed' => ConnectionStatus.reconnectFailed,
       'authenticationFailed' => ConnectionStatus.authenticationFailed,
       'serverUnreachable' => ConnectionStatus.serverUnreachable,
       'connectionDropped' => ConnectionStatus.connectionDropped,
@@ -171,12 +256,28 @@ class NativeBroadcastService {
   }
 }
 
+class AudioDiagnostic {
+  const AudioDiagnostic({
+    required this.rms,
+    required this.peak,
+    required this.clipping,
+    required this.volumeStatus,
+  });
+
+  final double rms;
+  final double peak;
+  final bool clipping;
+  final String volumeStatus;
+}
+
 class NativeBroadcastStats {
   const NativeBroadcastStats({
     required this.totalUploadBytes,
     required this.uploadSpeedKbps,
     required this.averageUploadKbps,
     required this.reconnectCount,
+    required this.reconnectAttempt,
+    required this.nextReconnectDelayMs,
     required this.recordingFilePath,
     required this.recordingBytes,
   });
@@ -185,6 +286,24 @@ class NativeBroadcastStats {
   final double uploadSpeedKbps;
   final double averageUploadKbps;
   final int reconnectCount;
+  final int reconnectAttempt;
+  final int nextReconnectDelayMs;
   final String recordingFilePath;
   final int recordingBytes;
+}
+
+class TestRecordingResult {
+  const TestRecordingResult({
+    required this.fileName,
+    required this.filePath,
+    required this.sizeBytes,
+    required this.durationSeconds,
+  });
+
+  final String fileName;
+  final String filePath;
+  final int sizeBytes;
+  final int durationSeconds;
+
+  double get sizeMb => sizeBytes / 1024 / 1024;
 }

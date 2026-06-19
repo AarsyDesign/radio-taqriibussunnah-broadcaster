@@ -2,7 +2,10 @@ enum ConnectionStatus {
   offline,
   connecting,
   live,
+  networkLost,
   reconnecting,
+  liveRestored,
+  reconnectFailed,
   authenticationFailed,
   serverUnreachable,
   microphoneDenied,
@@ -21,7 +24,10 @@ extension ConnectionStatusLabel on ConnectionStatus {
       ConnectionStatus.offline => 'Offline',
       ConnectionStatus.connecting => 'Connecting',
       ConnectionStatus.live => 'Live',
+      ConnectionStatus.networkLost => 'Network Lost',
       ConnectionStatus.reconnecting => 'Reconnecting',
+      ConnectionStatus.liveRestored => 'Live Restored',
+      ConnectionStatus.reconnectFailed => 'Reconnect Failed',
       ConnectionStatus.authenticationFailed => 'Authentication Failed',
       ConnectionStatus.serverUnreachable => 'Server Unreachable',
       ConnectionStatus.microphoneDenied => 'Microphone Denied',
@@ -40,7 +46,13 @@ extension ConnectionStatusLabel on ConnectionStatus {
       ConnectionStatus.offline => 'Belum ada siaran aktif.',
       ConnectionStatus.connecting => 'Menyambungkan ke server radio.',
       ConnectionStatus.live => 'Siaran sedang berjalan.',
-      ConnectionStatus.reconnecting => 'Mencoba menyambung ulang.',
+      ConnectionStatus.networkLost =>
+        'Jaringan terputus. Menunggu koneksi kembali.',
+      ConnectionStatus.reconnecting =>
+        'Koneksi terputus. Mencoba menyambung ulang...',
+      ConnectionStatus.liveRestored => 'Siaran tersambung kembali.',
+      ConnectionStatus.reconnectFailed =>
+        'Gagal menyambung ulang setelah beberapa percobaan.',
       ConnectionStatus.authenticationFailed =>
         'Username atau password ditolak.',
       ConnectionStatus.serverUnreachable => 'Server tidak dapat dijangkau.',

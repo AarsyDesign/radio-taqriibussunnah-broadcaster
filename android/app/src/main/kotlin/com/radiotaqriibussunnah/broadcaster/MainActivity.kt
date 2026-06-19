@@ -11,6 +11,7 @@ class MainActivity : FlutterActivity() {
     private val methodChannelName = "com.radiotaqriibussunnah.broadcaster/broadcast"
     private val eventChannelName = "com.radiotaqriibussunnah.broadcaster/broadcast_events"
     private val audioLevelEventChannelName = "com.radiotaqriibussunnah.broadcaster/audio_level_events"
+    private val audioDiagnosticEventChannelName = "com.radiotaqriibussunnah.broadcaster/audio_diagnostic_events"
     private val statsEventChannelName = "com.radiotaqriibussunnah.broadcaster/stats_events"
     private val logEventChannelName = "com.radiotaqriibussunnah.broadcaster/log_events"
 
@@ -22,6 +23,9 @@ class MainActivity : FlutterActivity() {
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, audioLevelEventChannelName)
             .setStreamHandler(BroadcastAudioLevelEvents)
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, audioDiagnosticEventChannelName)
+            .setStreamHandler(BroadcastAudioDiagnosticEvents)
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, statsEventChannelName)
             .setStreamHandler(BroadcastStatsEvents)
@@ -42,6 +46,12 @@ class MainActivity : FlutterActivity() {
                             putExtra(BroadcastService.EXTRA_USERNAME, call.argument<String>("username") ?: "")
                             putExtra(BroadcastService.EXTRA_PASSWORD, call.argument<String>("password") ?: "")
                             putExtra(BroadcastService.EXTRA_BITRATE_KBPS, bitrate)
+                            putExtra(BroadcastService.EXTRA_AUDIO_INPUT, call.argument<String>("audioInput") ?: "Mic HP")
+                            putExtra(BroadcastService.EXTRA_INPUT_GAIN_DB, call.argument<Double>("inputGainDb") ?: 0.0)
+                            putExtra(BroadcastService.EXTRA_NOISE_SUPPRESSION_LEVEL, call.argument<String>("noiseSuppressionLevel") ?: "Low")
+                            putExtra(BroadcastService.EXTRA_HIGH_PASS_FILTER_HZ, call.argument<Int>("highPassFilterHz") ?: 80)
+                            putExtra(BroadcastService.EXTRA_LIMITER_ENABLED, call.argument<Boolean>("limiterEnabled") ?: true)
+                            putExtra(BroadcastService.EXTRA_AUDIO_SOURCE_MODE, call.argument<String>("audioSourceMode") ?: "Natural / MIC")
                             putExtra(BroadcastService.EXTRA_SERVER_TYPE, call.argument<String>("serverType") ?: BroadcastService.SERVER_TYPE_SHOUTCAST)
                             putExtra(BroadcastService.EXTRA_USTADZ_NAME, call.argument<String>("ustadzName") ?: "")
                             putExtra(BroadcastService.EXTRA_KAJIAN_TITLE, call.argument<String>("kajianTitle") ?: "")
@@ -61,6 +71,48 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "getServiceStatus" -> result.success(BroadcastStatusEvents.currentStatus)
+
+                    "startTestRecording" -> {
+                        Thread {
+                            try {
+                                val audioInput = call.argument<String>("audioInput") ?: "Mic HP"
+                                val audioProcessingConfig = AudioProcessingConfig(
+                                    inputGainDb = call.argument<Double>("inputGainDb") ?: 0.0,
+                                    noiseSuppressionLevel = call.argument<String>("noiseSuppressionLevel") ?: "Low",
+                                    highPassFilterHz = call.argument<Int>("highPassFilterHz") ?: 80,
+                                    limiterEnabled = call.argument<Boolean>("limiterEnabled") ?: true,
+                                    audioSourceMode = call.argument<String>("audioSourceMode") ?: "Natural / MIC"
+                                )
+                                val recording = AudioTestRecorder(applicationContext)
+                                    .record15Seconds(audioInput, audioProcessingConfig)
+                                runOnUiThread { result.success(recording.toMap()) }
+                            } catch (error: Exception) {
+                                BroadcastLogEvents.send(
+                                    "[TEST RECORDING]\nFAILED\n${error.message.orEmpty()}"
+                                )
+                                runOnUiThread {
+                                    result.error(
+                                        "test_recording_failed",
+                                        error.message,
+                                        null
+                                    )
+                                }
+                            }
+                        }.apply {
+                            name = "AudioTestRecording"
+                            start()
+                        }
+                    }
+
+                    "playTestRecording" -> {
+                        val filePath = call.argument<String>("filePath") ?: ""
+                        result.success(AudioTestPlayback.play(filePath))
+                    }
+
+                    "deleteTestRecording" -> {
+                        val filePath = call.argument<String>("filePath") ?: ""
+                        result.success(AudioTestPlayback.delete(filePath))
+                    }
 
                     "testBroadcastConnection" -> {
                         Thread {

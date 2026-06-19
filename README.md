@@ -54,12 +54,20 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 - Input username DJ.
 - Input password DJ atau source password SHOUTcast.
 - Dropdown bitrate:
+  - 32 kbps
   - 64 kbps
   - 96 kbps
   - 128 kbps
 - Dropdown input audio:
   - Mic HP
   - USB Audio Interface
+- Bagian Kualitas Audio:
+  - Preset Audio: Hemat Data, Standar Kajian, Jernih, Maksimal
+  - Input Gain -12 dB sampai +12 dB
+  - Noise Suppression Off/Low/Medium/High
+  - High-pass Filter Off/80 Hz/100 Hz
+  - Limiter On/Off
+  - Audio Source Mode Natural/MIC atau Voice Processing/VOICE_COMMUNICATION
 - Tombol Tes Koneksi.
 - Tombol Simpan untuk menyimpan konfigurasi permanen.
 - Hasil test connection native:
@@ -92,7 +100,10 @@ Default server awal:
   - offline
   - connecting
   - live
+  - networkLost
   - reconnecting
+  - liveRestored
+  - reconnectFailed
   - authenticationFailed
   - serverUnreachable
   - microphoneDenied
@@ -101,6 +112,9 @@ Default server awal:
 - Timer durasi siaran.
 - Audio level meter dummy.
 - Saat native service berjalan, audio level meter memakai level microphone real dari `AudioRecord`.
+- Bagian Kualitas Audio menampilkan status volume Terlalu kecil, Aman, atau Terlalu keras.
+- Clipping indicator tampil jika sample PCM sering mendekati batas maksimum.
+- Tombol Tes Rekam 15 Detik membuat file WAV test sebelum live, lalu menampilkan nama file, path, ukuran, durasi, tombol Putar, dan tombol Hapus.
 - Monitoring internet:
   - upload keluar
   - kecepatan upload
@@ -111,6 +125,7 @@ Default server awal:
   - ukuran dan nama file rekaman lokal
 - Tombol besar Mulai Siaran.
 - Saat live, tombol berubah menjadi Stop Siaran.
+- Saat jaringan putus sementara atau reconnecting, tombol tetap Stop Siaran.
 - Saat stop ditekan, muncul dialog konfirmasi.
 - Sebelum mulai siaran, aplikasi memastikan konfigurasi sudah lengkap.
 - Sebelum live dummy, aplikasi meminta permission microphone.
@@ -131,6 +146,19 @@ List riwayat dummy dibaca dari storage lokal dan berisi:
 - jumlah reconnect
 - status akhir
 - tombol hapus log
+
+Bagian bawah Riwayat menampilkan Informasi Build:
+
+- app name
+- version name
+- build number
+- build channel
+- patch name
+- environment
+- build date
+- git commit
+- tombol Salin Info Build
+- changelog sederhana
 
 ## Struktur Folder
 
@@ -204,6 +232,12 @@ lib/models/broadcast_log.dart
   - bitrate
   - input audio
   - tipe server
+  - audio preset
+  - input gain
+  - noise suppression
+  - high-pass filter
+  - limiter
+  - audio source mode
   - log dummy lokal sebagai JSON list
 - `FlutterSecureStorage` menyimpan:
   - password DJ
@@ -226,7 +260,10 @@ EventChannel mengirim status:
 - `offline`
 - `connecting`
 - `live`
+- `networkLost`
 - `reconnecting`
+- `liveRestored`
+- `reconnectFailed`
 - `authenticationFailed`
 - `serverUnreachable`
 - `connectionDropped`
@@ -237,6 +274,13 @@ EventChannel audio level mengirim nilai:
 - `0.0` sampai `1.0`
 - sumber data dari `AudioRecord`
 
+EventChannel audio diagnostic mengirim:
+
+- RMS input PCM
+- peak input PCM
+- clipping true/false
+- volume status `small`, `safe`, atau `clipping`
+
 `BroadcastService` melakukan:
 
 - berjalan sebagai Foreground Service
@@ -245,6 +289,12 @@ EventChannel audio level mengirim nilai:
 - menangkap input microphone dengan `AudioRecord`
 - merekam input audio lokal ke file WAV dari buffer `AudioRecord`
 - menghitung level audio real
+- menghitung diagnostic audio real: RMS, peak, clipping, dan volume status
+- membuat test recording WAV 15 detik untuk cek kualitas input sebelum live
+- memutar dan menghapus file test recording dari tombol di UI
+- menerapkan high-pass filter ringan, input gain, dan limiter sebelum recorder/encoder
+- memakai NoiseSuppressor Android jika tersedia dan diaktifkan
+- mencatat availability NoiseSuppressor, AGC, dan AEC tanpa mengaktifkan AGC/AEC default
 - encode audio PCM ke AAC-LC menggunakan `MediaCodec`
 - memakai bitrate 64/96/128 kbps dari konfigurasi Flutter
 - konek ke Icecast/AzuraCast lewat TCP socket
@@ -252,7 +302,9 @@ EventChannel audio level mengirim nilai:
 - mengirim AAC ADTS frame ke server
 - menangani authentication failed
 - menangani server unreachable
-- melakukan reconnect dasar saat koneksi putus
+- melakukan reconnect otomatis sampai 10 percobaan saat jaringan/socket putus sementara
+- menjaga AudioRecord, encoder, dan rekaman lokal tetap aktif saat reconnecting
+- memakai buffer output kecil untuk membantu gangguan jaringan sangat singkat
 - mengirim level audio ke Flutter
 - mengirim total upload, kecepatan upload, rata-rata upload, dan jumlah reconnect ke Flutter
 - mengirim path dan ukuran file rekaman ke Flutter
@@ -268,7 +320,10 @@ enum ConnectionStatus {
   offline,
   connecting,
   live,
+  networkLost,
   reconnecting,
+  liveRestored,
+  reconnectFailed,
   authenticationFailed,
   serverUnreachable,
   microphoneDenied,
@@ -276,6 +331,17 @@ enum ConnectionStatus {
   stopped,
 }
 ```
+
+## Catatan AutoDJ Saat Jaringan Putus
+
+Jika AutoDJ tetap masuk saat jaringan putus sangat singkat, itu karena server melihat source live benar-benar disconnect.
+
+Aplikasi bisa mempercepat reconnect, tetapi tidak bisa sepenuhnya mencegah AutoDJ masuk jika koneksi source ke server sudah terputus.
+
+Solusi server-side yang lebih kuat:
+
+- atur grace/delay fallback AutoDJ jika tersedia di AzuraCast
+- atau gunakan relay di VPS yang selalu terhubung ke AzuraCast dan mengirim silence saat HP broadcaster putus sebentar
 
 ## Build dan Test
 
