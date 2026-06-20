@@ -4,6 +4,16 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 ## Status Saat Ini
 
+### PATCH 2 — admin-content-01
+
+- Panel Admin Radio/CMS internal ditambahkan sebagai tab Admin.
+- Informasi Radio, Pengumuman, Live Notice, Jadwal Kajian, Ustadz, Dauroh, dan Maintenance bisa dikelola dari aplikasi.
+- Konten tahap awal disimpan lokal via `SharedPreferences`.
+- Admin PIN 6 digit disimpan aman via `FlutterSecureStorage`.
+- Tidak ada secret API yang disimpan di APK.
+- Versi aplikasi dinaikkan ke `0.9.0+30`.
+
+
 - UI Flutter sudah dibuat ulang.
 - State dummy menggunakan `provider`.
 - Konfigurasi operator disimpan permanen.

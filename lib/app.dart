@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'pages/admin_content_page.dart';
 import 'pages/live_page.dart';
 import 'pages/log_page.dart';
 import 'pages/setup_page.dart';
@@ -15,7 +16,7 @@ class BroadcasterApp extends StatefulWidget {
 class _BroadcasterAppState extends State<BroadcasterApp> {
   int _selectedIndex = 1;
 
-  static const _pages = [SetupPage(), LivePage(), LogPage()];
+  static const _pages = [SetupPage(), LivePage(), LogPage(), AdminContentPage()];
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +46,11 @@ class _BroadcasterAppState extends State<BroadcasterApp> {
               icon: Icon(Icons.receipt_long_rounded),
               selectedIcon: Icon(Icons.receipt_long),
               label: 'Log',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.admin_panel_settings_outlined),
+              selectedIcon: Icon(Icons.admin_panel_settings_rounded),
+              label: 'Admin',
             ),
           ],
         ),

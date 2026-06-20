@@ -3,10 +3,12 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/admin_content.dart';
 import '../models/broadcast_log.dart';
 import '../models/broadcaster_config.dart';
 import '../models/connection_status.dart';
 import '../models/live_metadata.dart';
+import '../services/admin_content_storage_service.dart';
 import '../services/broadcast_log_storage_service.dart';
 import '../services/config_storage_service.dart';
 import '../services/microphone_permission_service.dart';
@@ -34,13 +36,16 @@ class BroadcasterProvider extends ChangeNotifier {
     MicrophonePermissionService? microphonePermissionService,
     NativeBroadcastService? nativeBroadcastService,
     NetworkInfoService? networkInfoService,
+    AdminContentStorageService? adminContentStorageService,
   }) : _configStorageService = configStorageService ?? ConfigStorageService(),
        _logStorageService = logStorageService ?? BroadcastLogStorageService(),
        _microphonePermissionService =
            microphonePermissionService ?? MicrophonePermissionService(),
        _nativeBroadcastService =
            nativeBroadcastService ?? NativeBroadcastService(),
-       _networkInfoService = networkInfoService ?? NetworkInfoService() {
+       _networkInfoService = networkInfoService ?? NetworkInfoService(),
+       _adminContentStorageService =
+           adminContentStorageService ?? AdminContentStorageService() {
     _nativeStatusSubscription = _nativeBroadcastService.statusStream.listen(
       _handleNativeStatus,
       onError: (_) {},
@@ -66,6 +71,7 @@ class BroadcasterProvider extends ChangeNotifier {
   final MicrophonePermissionService _microphonePermissionService;
   final NativeBroadcastService _nativeBroadcastService;
   final NetworkInfoService _networkInfoService;
+  final AdminContentStorageService _adminContentStorageService;
   final _random = Random(12);
 
   Timer? _timer;
@@ -108,6 +114,9 @@ class BroadcasterProvider extends ChangeNotifier {
   bool isTestRecording = false;
   TestRecordingResult? testRecording;
   List<BroadcastLog> logs = [];
+  AdminContent adminContent = const AdminContent();
+  bool hasAdminPin = false;
+  bool isAdminUnlocked = false;
 
   String get host => config.host;
   String get port => config.port.toString();
@@ -163,10 +172,14 @@ class BroadcasterProvider extends ChangeNotifier {
     final loadedConfig = await _configStorageService.loadConfig();
     final loadedLogs = await _logStorageService.loadLogs();
     final loadedNetwork = await _networkInfoService.getNetworkType();
+    final loadedAdminContent = await _adminContentStorageService.loadContent();
+    final loadedHasAdminPin = await _adminContentStorageService.hasAdminPin();
 
     config = loadedConfig;
     logs = loadedLogs;
     networkType = loadedNetwork;
+    adminContent = loadedAdminContent;
+    hasAdminPin = loadedHasAdminPin;
     final nativeStatus = await _nativeBroadcastService.getServiceStatus();
     if (nativeStatus != null && nativeStatus != ConnectionStatus.offline) {
       status = nativeStatus;
@@ -182,6 +195,32 @@ class BroadcasterProvider extends ChangeNotifier {
       }
     }
     isLoading = false;
+    notifyListeners();
+  }
+
+
+  Future<void> saveAdminContent(AdminContent content) async {
+    adminContent = content;
+    await _adminContentStorageService.saveContent(content);
+    notifyListeners();
+  }
+
+  Future<void> setAdminPin(String pin) async {
+    await _adminContentStorageService.saveAdminPin(pin);
+    hasAdminPin = true;
+    isAdminUnlocked = true;
+    notifyListeners();
+  }
+
+  Future<bool> unlockAdmin(String pin) async {
+    final verified = await _adminContentStorageService.verifyAdminPin(pin);
+    isAdminUnlocked = verified;
+    notifyListeners();
+    return verified;
+  }
+
+  void lockAdmin() {
+    isAdminUnlocked = false;
     notifyListeners();
   }
 

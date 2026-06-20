@@ -656,3 +656,29 @@ No issues found!
 All tests passed!
 Built build\app\outputs\flutter-apk\app-debug.apk
 ```
+
+## PATCH 2 — admin-content-01
+
+Tanggal: 2026-06-20
+
+Perubahan:
+
+- Menambahkan model `AdminContent` untuk Informasi Radio, Pengumuman, Live Notice, Jadwal Kajian, Ustadz, Dauroh, dan Maintenance.
+- Menambahkan `AdminContentStorageService` untuk penyimpanan konten via `SharedPreferences`.
+- Menambahkan Admin PIN 6 digit via `FlutterSecureStorage`.
+- Mengintegrasikan state admin content ke `BroadcasterProvider`.
+- Menambahkan halaman `AdminContentPage` sebagai CMS internal lokal.
+- Menambahkan tab Admin pada bottom navigation.
+- Menaikkan versi aplikasi ke `0.9.0+30`.
+
+Verifikasi:
+
+```powershell
+dart format lib
+flutter analyze
+```
+
+Catatan:
+
+- Backend tahap awal masih lokal.
+- Backend tahap berikutnya disiapkan untuk Supabase + REST API.
