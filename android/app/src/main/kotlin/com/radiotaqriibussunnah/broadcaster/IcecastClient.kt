@@ -72,7 +72,13 @@ class IcecastClient(
 
     fun forceReconnect(reason: String) {
         if (!running) return
-        onLog("Socket Watchdog: $reason. Socket lama ditutup aman.")
+        val normalizedReason = reason.ifBlank { "networkLost" }
+        onLog("Network Watchdog: $normalizedReason. Socket lama ditutup aman untuk reconnect cepat.")
+        if (normalizedReason.contains("network", ignoreCase = true) ||
+            normalizedReason.contains("offline", ignoreCase = true)
+        ) {
+            onStatus("networkLost")
+        }
         runCatching { currentSocket?.close() }
     }
 
@@ -119,14 +125,15 @@ class IcecastClient(
                 running = false
             } catch (timeout: SocketTimeoutException) {
                 attempts += 1
-                onLog("[RESULT]\nTIMEOUT\n${timeout.message.orEmpty()}")
+                logSocketFailure(timeout, "Timeout")
                 if (!retryOrFinish(attempts, if (hasConnected) "reconnectFailed" else "timeout")) {
                     running = false
                 }
             } catch (error: IOException) {
                 attempts += 1
-                onLog("[RESULT]\nSOCKET ERROR\n${error.message.orEmpty()}")
-                if (!retryOrFinish(attempts, if (hasConnected) "reconnectFailed" else "serverUnreachable")) {
+                val status = classifySocketStatus(error, hasConnected)
+                logSocketFailure(error, status)
+                if (!retryOrFinish(attempts, if (hasConnected) "reconnectFailed" else status)) {
                     running = false
                 }
             } catch (error: Exception) {
@@ -142,6 +149,36 @@ class IcecastClient(
         }
     }
 
+
+    private fun classifySocketStatus(error: IOException, hasConnected: Boolean): String {
+        val message = error.message.orEmpty().lowercase()
+        if (message.contains("network is unreachable") ||
+            message.contains("no route") ||
+            message.contains("host unreachable") ||
+            message.contains("software caused connection abort")
+        ) {
+            return "networkLost"
+        }
+        return if (hasConnected) "reconnectFailed" else "serverUnreachable"
+    }
+
+    private fun logSocketFailure(error: IOException, label: String) {
+        onLog("[RESULT]\nSOCKET WATCHDOG: ${describeSocketFailure(error)}\nStatus hint: $label")
+    }
+
+    private fun describeSocketFailure(error: IOException): String {
+        val message = error.message.orEmpty()
+        val lower = message.lowercase()
+        val type = when {
+            error is SocketTimeoutException -> "Timeout"
+            lower.contains("broken pipe") -> "Broken Pipe"
+            lower.contains("connection reset") -> "Connection Reset"
+            lower.contains("network is unreachable") || lower.contains("no route") -> "Network Lost"
+            lower.contains("write") -> "Write Failure"
+            else -> "Socket Error"
+        }
+        return "$type: $message"
+    }
     private fun retryOrFinish(attempts: Int, finalStatus: String): Boolean {
         if (!running) return false
         if (attempts > MAX_RECONNECT_ATTEMPTS) {
@@ -262,7 +299,7 @@ class IcecastClient(
                 output.write(frame)
                 output.flush()
             } catch (error: IOException) {
-                onLog("Socket write failed: ${error.message.orEmpty()}")
+                onLog("Socket Watchdog: Write Failure. ${describeSocketFailure(error)}")
                 throw error
             }
             onBytesSent(frame.size.toLong())

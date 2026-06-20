@@ -4,6 +4,15 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 ## Status Saat Ini
 
+### PATCH 3 — reconnect-fix-01
+
+- Reconnect delay dipastikan sesuai roadmap: 500ms, 1s, 2s, 3s, 5s, 10s, 15s, 20s, 30s, 30s.
+- Socket watchdog diperjelas untuk Timeout, Broken Pipe, Connection Reset, Network Lost, dan Write Failure.
+- `forceReconnect()` sekarang mengirim status `networkLost` saat watchdog mendeteksi offline/perubahan jaringan.
+- Buffer kecil encoded frame tetap aktif agar AudioRecord, encoder, dan recording tidak perlu dimatikan saat reconnect.
+- Versi aplikasi dinaikkan ke `0.9.1+31`.
+
+
 ### PATCH 2 — admin-content-01
 
 - Panel Admin Radio/CMS internal ditambahkan sebagai tab Admin.

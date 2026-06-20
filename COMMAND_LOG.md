@@ -682,3 +682,28 @@ Catatan:
 
 - Backend tahap awal masih lokal.
 - Backend tahap berikutnya disiapkan untuk Supabase + REST API.
+
+## PATCH 3 — reconnect-fix-01
+
+Tanggal: 2026-06-20
+
+Perubahan:
+
+- Menguatkan socket watchdog di `IcecastClient.kt`.
+- Menambahkan klasifikasi log untuk Timeout, Broken Pipe, Connection Reset, Network Lost, dan Write Failure.
+- `forceReconnect()` mengirim status `networkLost` ketika alasan watchdog menunjukkan network/offline.
+- Reconnect delay dipastikan mengikuti roadmap 10 attempt: 500ms, 1s, 2s, 3s, 5s, 10s, 15s, 20s, 30s, 30s.
+- Buffer encoded frame tetap bounded agar reconnect tidak membuat memori membesar.
+- Menaikkan versi aplikasi ke `0.9.1+31`.
+
+Verifikasi lokal:
+
+```powershell
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Catatan:
+
+- Sandbox ini tidak menyediakan `flutter`/`dart`, sehingga verifikasi Flutter perlu dijalankan di mesin development.
