@@ -740,3 +740,26 @@ Perubahan:
 Catatan:
 
 - Engine Whisper/OpenAI/self-hosted belum dikonfigurasi; patch ini menyiapkan struktur lokal dan pipeline state.
+
+## PATCH 6 — release-candidate-01
+
+Tanggal: 2026-06-21
+
+Perubahan:
+
+- Menaikkan versi aplikasi ke `1.0.0+40`.
+- Memperbarui `app_changelog.dart` ke patch `release-candidate-01`.
+- Menambahkan `release_checklist.dart` berisi checklist audio, jaringan, background, siaran panjang, stress test, dan SOP operator.
+- README diperbarui dengan status Release Candidate internal.
+
+Verifikasi yang perlu dijalankan di mesin development:
+
+```powershell
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Catatan:
+
+- Sandbox tidak memiliki Flutter/Dart CLI, sehingga validasi build perlu dilakukan lokal.

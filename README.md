@@ -4,6 +4,14 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 ## Status Saat Ini
 
+### PATCH 6 — release-candidate-01
+
+- Aplikasi dinaikkan ke Release Candidate internal `1.0.0+40`.
+- Checklist stabilisasi ditambahkan untuk audio, jaringan, background, siaran panjang, stress test, dan SOP operator.
+- Build info/changelog diperbarui ke patch `release-candidate-01`.
+- Target versi 1.0 mencakup broadcaster streaming, metadata kajian, audio processor, recorder, queue upload, CMS internal, dan scaffold AI transcript.
+
+
 ### PATCH 5 — ai-transcript-01
 
 - Menambahkan scaffold AI transcript job untuk rekaman kajian.
