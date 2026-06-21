@@ -724,3 +724,19 @@ Catatan:
 
 - Upload server masih placeholder karena credential/backend Supabase belum dikonfigurasi.
 - Verifikasi Flutter perlu dijalankan di mesin development karena sandbox tidak memiliki Flutter/Dart CLI.
+
+## PATCH 5 — ai-transcript-01
+
+Tanggal: 2026-06-21
+
+Perubahan:
+
+- Menambahkan model `AiTranscriptJob`.
+- Menambahkan `AiTranscriptService` berbasis `SharedPreferences`.
+- Rekaman yang masuk queue upload otomatis disiapkan sebagai job transcript.
+- Field transcript mencakup teks lengkap, ringkasan, poin penting, keyword, timestamp penting, dan status pending/processing/completed/failed.
+- Menaikkan versi aplikasi ke `0.9.3+33`.
+
+Catatan:
+
+- Engine Whisper/OpenAI/self-hosted belum dikonfigurasi; patch ini menyiapkan struktur lokal dan pipeline state.

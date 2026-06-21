@@ -4,12 +4,14 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../models/admin_content.dart';
+import '../models/ai_transcript.dart';
 import '../models/broadcast_log.dart';
 import '../models/broadcaster_config.dart';
 import '../models/connection_status.dart';
 import '../models/live_metadata.dart';
 import '../models/recording_upload.dart';
 import '../services/admin_content_storage_service.dart';
+import '../services/ai_transcript_service.dart';
 import '../services/broadcast_log_storage_service.dart';
 import '../services/config_storage_service.dart';
 import '../services/microphone_permission_service.dart';
@@ -40,6 +42,7 @@ class BroadcasterProvider extends ChangeNotifier {
     NetworkInfoService? networkInfoService,
     AdminContentStorageService? adminContentStorageService,
     RecordingUploadService? recordingUploadService,
+    AiTranscriptService? aiTranscriptService,
   }) : _configStorageService = configStorageService ?? ConfigStorageService(),
        _logStorageService = logStorageService ?? BroadcastLogStorageService(),
        _microphonePermissionService =
@@ -50,7 +53,8 @@ class BroadcasterProvider extends ChangeNotifier {
        _adminContentStorageService =
            adminContentStorageService ?? AdminContentStorageService(),
        _recordingUploadService =
-           recordingUploadService ?? RecordingUploadService() {
+           recordingUploadService ?? RecordingUploadService(),
+       _aiTranscriptService = aiTranscriptService ?? AiTranscriptService() {
     _nativeStatusSubscription = _nativeBroadcastService.statusStream.listen(
       _handleNativeStatus,
       onError: (_) {},
@@ -78,6 +82,7 @@ class BroadcasterProvider extends ChangeNotifier {
   final NetworkInfoService _networkInfoService;
   final AdminContentStorageService _adminContentStorageService;
   final RecordingUploadService _recordingUploadService;
+  final AiTranscriptService _aiTranscriptService;
   final _random = Random(12);
 
   Timer? _timer;
@@ -121,6 +126,7 @@ class BroadcasterProvider extends ChangeNotifier {
   TestRecordingResult? testRecording;
   List<BroadcastLog> logs = [];
   List<RecordingUpload> recordingUploads = [];
+  List<AiTranscriptJob> aiTranscriptJobs = [];
   AdminContent adminContent = const AdminContent();
   bool hasAdminPin = false;
   bool isAdminUnlocked = false;
@@ -182,6 +188,7 @@ class BroadcasterProvider extends ChangeNotifier {
     final loadedAdminContent = await _adminContentStorageService.loadContent();
     final loadedHasAdminPin = await _adminContentStorageService.hasAdminPin();
     final loadedRecordingUploads = await _recordingUploadService.loadQueue();
+    final loadedTranscriptJobs = await _aiTranscriptService.loadJobs();
 
     config = loadedConfig;
     logs = loadedLogs;
@@ -189,6 +196,7 @@ class BroadcasterProvider extends ChangeNotifier {
     adminContent = loadedAdminContent;
     hasAdminPin = loadedHasAdminPin;
     recordingUploads = loadedRecordingUploads;
+    aiTranscriptJobs = loadedTranscriptJobs;
     final nativeStatus = await _nativeBroadcastService.getServiceStatus();
     if (nativeStatus != null && nativeStatus != ConnectionStatus.offline) {
       status = nativeStatus;
@@ -223,6 +231,7 @@ class BroadcasterProvider extends ChangeNotifier {
     );
     recordingUploads = [item, ...recordingUploads.where((old) => old.id != item.id)];
     await _recordingUploadService.saveQueue(recordingUploads);
+    await enqueueTranscriptJob(item);
     notifyListeners();
   }
 
@@ -230,6 +239,20 @@ class BroadcasterProvider extends ChangeNotifier {
     final updated = await _recordingUploadService.markUploadPlaceholder(item);
     recordingUploads = recordingUploads.map((old) => old.id == item.id ? updated : old).toList();
     await _recordingUploadService.saveQueue(recordingUploads);
+    notifyListeners();
+  }
+
+  Future<void> enqueueTranscriptJob(RecordingUpload recording) async {
+    final job = _aiTranscriptService.createJobFromRecording(recording);
+    aiTranscriptJobs = [job, ...aiTranscriptJobs.where((old) => old.id != job.id)];
+    await _aiTranscriptService.saveJobs(aiTranscriptJobs);
+    notifyListeners();
+  }
+
+  Future<void> markTranscriptBackendPending(AiTranscriptJob job) async {
+    final updated = await _aiTranscriptService.markBackendPending(job);
+    aiTranscriptJobs = aiTranscriptJobs.map((old) => old.id == job.id ? updated : old).toList();
+    await _aiTranscriptService.saveJobs(aiTranscriptJobs);
     notifyListeners();
   }
 

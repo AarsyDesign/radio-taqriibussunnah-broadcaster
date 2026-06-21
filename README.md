@@ -4,6 +4,15 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 ## Status Saat Ini
 
+### PATCH 5 — ai-transcript-01
+
+- Menambahkan scaffold AI transcript job untuk rekaman kajian.
+- Pipeline disiapkan untuk audio → upload → Whisper/STT → transcript → ringkasan → publikasi.
+- Metadata transcript menyimpan judul, tema, ustadz, bahasa campuran Indonesia/Arab, ringkasan, poin penting, keyword, dan timestamp.
+- Backend AI masih placeholder siap Whisper/OpenAI/self-hosted.
+- Versi aplikasi dinaikkan ke `0.9.3+33`.
+
+
 ### PATCH 4 — recording-upload-01
 
 - Rekaman siaran utama disimpan lebih mudah ditemukan di `Music/RadioTaqriibussunnah/Recordings`.
