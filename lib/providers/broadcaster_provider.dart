@@ -8,12 +8,14 @@ import '../models/ai_transcript.dart';
 import '../models/broadcast_log.dart';
 import '../models/broadcaster_config.dart';
 import '../models/connection_status.dart';
+import '../models/content_sync_payload.dart';
 import '../models/live_metadata.dart';
 import '../models/recording_upload.dart';
 import '../services/admin_content_storage_service.dart';
 import '../services/ai_transcript_service.dart';
 import '../services/broadcast_log_storage_service.dart';
 import '../services/config_storage_service.dart';
+import '../services/content_sync_service.dart';
 import '../services/microphone_permission_service.dart';
 import '../services/native_broadcast_service.dart';
 import '../services/network_info_service.dart';
@@ -43,6 +45,7 @@ class BroadcasterProvider extends ChangeNotifier {
     AdminContentStorageService? adminContentStorageService,
     RecordingUploadService? recordingUploadService,
     AiTranscriptService? aiTranscriptService,
+    ContentSyncService? contentSyncService,
   }) : _configStorageService = configStorageService ?? ConfigStorageService(),
        _logStorageService = logStorageService ?? BroadcastLogStorageService(),
        _microphonePermissionService =
@@ -54,7 +57,8 @@ class BroadcasterProvider extends ChangeNotifier {
            adminContentStorageService ?? AdminContentStorageService(),
        _recordingUploadService =
            recordingUploadService ?? RecordingUploadService(),
-       _aiTranscriptService = aiTranscriptService ?? AiTranscriptService() {
+       _aiTranscriptService = aiTranscriptService ?? AiTranscriptService(),
+       _contentSyncService = contentSyncService ?? ContentSyncService() {
     _nativeStatusSubscription = _nativeBroadcastService.statusStream.listen(
       _handleNativeStatus,
       onError: (_) {},
@@ -83,6 +87,7 @@ class BroadcasterProvider extends ChangeNotifier {
   final AdminContentStorageService _adminContentStorageService;
   final RecordingUploadService _recordingUploadService;
   final AiTranscriptService _aiTranscriptService;
+  final ContentSyncService _contentSyncService;
   final _random = Random(12);
 
   Timer? _timer;
@@ -127,6 +132,7 @@ class BroadcasterProvider extends ChangeNotifier {
   List<BroadcastLog> logs = [];
   List<RecordingUpload> recordingUploads = [];
   List<AiTranscriptJob> aiTranscriptJobs = [];
+  ContentSyncState contentSyncState = const ContentSyncState();
   AdminContent adminContent = const AdminContent();
   bool hasAdminPin = false;
   bool isAdminUnlocked = false;
@@ -189,6 +195,7 @@ class BroadcasterProvider extends ChangeNotifier {
     final loadedHasAdminPin = await _adminContentStorageService.hasAdminPin();
     final loadedRecordingUploads = await _recordingUploadService.loadQueue();
     final loadedTranscriptJobs = await _aiTranscriptService.loadJobs();
+    final loadedContentSyncState = await _contentSyncService.loadState();
 
     config = loadedConfig;
     logs = loadedLogs;
@@ -197,6 +204,7 @@ class BroadcasterProvider extends ChangeNotifier {
     hasAdminPin = loadedHasAdminPin;
     recordingUploads = loadedRecordingUploads;
     aiTranscriptJobs = loadedTranscriptJobs;
+    contentSyncState = loadedContentSyncState;
     final nativeStatus = await _nativeBroadcastService.getServiceStatus();
     if (nativeStatus != null && nativeStatus != ConnectionStatus.offline) {
       status = nativeStatus;
@@ -253,6 +261,27 @@ class BroadcasterProvider extends ChangeNotifier {
     final updated = await _aiTranscriptService.markBackendPending(job);
     aiTranscriptJobs = aiTranscriptJobs.map((old) => old.id == job.id ? updated : old).toList();
     await _aiTranscriptService.saveJobs(aiTranscriptJobs);
+    notifyListeners();
+  }
+
+  Future<void> saveContentSyncEndpoint(String endpointUrl) async {
+    contentSyncState = await _contentSyncService.saveEndpoint(endpointUrl);
+    notifyListeners();
+  }
+
+  Future<void> syncLiveContent({required bool isLive}) async {
+    final now = DateTime.now();
+    final payload = ContentSyncPayload(
+      isLive: isLive,
+      title: kajianTitle,
+      theme: kajianTheme,
+      ustadz: ustadzName,
+      liveMetadata: liveMetadata,
+      updatedAt: now,
+      startedAt: isLive ? (_startedAt ?? now) : _startedAt,
+      stoppedAt: isLive ? null : now,
+    );
+    contentSyncState = await _contentSyncService.sync(payload);
     notifyListeners();
   }
 
@@ -437,6 +466,7 @@ class BroadcasterProvider extends ChangeNotifier {
     if (didStartNative) {
       _nativeServiceRunning = true;
       _usingNativeAudioLevel = true;
+      await syncLiveContent(isLive: true);
       return StartBroadcastResult.started;
     }
 
@@ -464,6 +494,7 @@ class BroadcasterProvider extends ChangeNotifier {
     status = ConnectionStatus.stopped;
     audioLevel = 0;
     _timer?.cancel();
+    await syncLiveContent(isLive: false);
     await _saveSessionLog(ConnectionStatus.stopped);
     notifyListeners();
   }

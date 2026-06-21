@@ -4,6 +4,15 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 ## Status Saat Ini
 
+### PATCH 7 — content-sync-01
+
+- Menambahkan struktur sync metadata live ke backend REST/Supabase-ready.
+- Saat siaran mulai, aplikasi menyiapkan payload `is_live=true`, judul kajian, tema, ustadz, live metadata, dan waktu mulai.
+- Saat siaran berhenti, aplikasi menyiapkan payload `is_live=false` dan waktu berhenti.
+- Endpoint sync disimpan lokal dan tidak menyimpan secret API di APK.
+- Versi aplikasi dinaikkan ke `1.0.1+41`.
+
+
 ### PATCH 6 — release-candidate-01
 
 - Aplikasi dinaikkan ke Release Candidate internal `1.0.0+40`.

@@ -763,3 +763,20 @@ flutter build apk --debug
 Catatan:
 
 - Sandbox tidak memiliki Flutter/Dart CLI, sehingga validasi build perlu dilakukan lokal.
+
+## PATCH 7 — content-sync-01
+
+Tanggal: 2026-06-21
+
+Perubahan:
+
+- Menambahkan `ContentSyncPayload` dan `ContentSyncState`.
+- Menambahkan `ContentSyncService` REST-ready untuk mengirim metadata live ke backend.
+- Mengintegrasikan sync saat broadcast mulai (`is_live=true`) dan berhenti (`is_live=false`).
+- Endpoint sync disimpan via `SharedPreferences`; secret API tetap tidak ditanam di APK.
+- Menaikkan versi aplikasi ke `1.0.1+41`.
+
+Catatan:
+
+- Backend penerima endpoint perlu dibuat/diisi di tahap deployment.
+- Verifikasi Flutter perlu dijalankan di mesin development.
