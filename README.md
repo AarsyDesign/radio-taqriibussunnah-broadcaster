@@ -4,6 +4,16 @@ Aplikasi Android internal untuk operator Radio Taqriibussunnah. Tahap saat ini f
 
 ## Status Saat Ini
 
+### PATCH 4 — recording-upload-01
+
+- Rekaman siaran utama disimpan lebih mudah ditemukan di `Music/RadioTaqriibussunnah/Recordings`.
+- Rekaman test disimpan di `Music/RadioTaqriibussunnah/TestRecordings`.
+- Queue upload rekaman tahap awal ditambahkan berbasis `SharedPreferences`.
+- Metadata rekaman siap upload: judul, tema, ustadz, tanggal, durasi, ukuran file, path lokal.
+- Upload backend masih placeholder siap Supabase Storage/VPS/S3.
+- Versi aplikasi dinaikkan ke `0.9.2+32`.
+
+
 ### PATCH 3 — reconnect-fix-01
 
 - Reconnect delay dipastikan sesuai roadmap: 500ms, 1s, 2s, 3s, 5s, 10s, 15s, 20s, 30s, 30s.

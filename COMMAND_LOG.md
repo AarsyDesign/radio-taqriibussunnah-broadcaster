@@ -707,3 +707,20 @@ flutter build apk --debug
 Catatan:
 
 - Sandbox ini tidak menyediakan `flutter`/`dart`, sehingga verifikasi Flutter perlu dijalankan di mesin development.
+## PATCH 4 — recording-upload-01
+
+Tanggal: 2026-06-21
+
+Perubahan:
+
+- Mengubah folder rekaman utama Android menjadi `Music/RadioTaqriibussunnah/Recordings`.
+- Mengubah folder test recording menjadi `Music/RadioTaqriibussunnah/TestRecordings`.
+- Menambahkan model `RecordingUpload` dan status upload pending/uploading/uploaded/failed.
+- Menambahkan `RecordingUploadService` untuk queue upload lokal via `SharedPreferences`.
+- Broadcast log dengan file rekaman otomatis masuk queue upload lokal.
+- Menaikkan versi aplikasi ke `0.9.2+32`.
+
+Catatan:
+
+- Upload server masih placeholder karena credential/backend Supabase belum dikonfigurasi.
+- Verifikasi Flutter perlu dijalankan di mesin development karena sandbox tidak memiliki Flutter/Dart CLI.

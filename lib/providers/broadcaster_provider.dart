@@ -8,12 +8,14 @@ import '../models/broadcast_log.dart';
 import '../models/broadcaster_config.dart';
 import '../models/connection_status.dart';
 import '../models/live_metadata.dart';
+import '../models/recording_upload.dart';
 import '../services/admin_content_storage_service.dart';
 import '../services/broadcast_log_storage_service.dart';
 import '../services/config_storage_service.dart';
 import '../services/microphone_permission_service.dart';
 import '../services/native_broadcast_service.dart';
 import '../services/network_info_service.dart';
+import '../services/recording_upload_service.dart';
 
 enum StartBroadcastResult {
   started,
@@ -37,6 +39,7 @@ class BroadcasterProvider extends ChangeNotifier {
     NativeBroadcastService? nativeBroadcastService,
     NetworkInfoService? networkInfoService,
     AdminContentStorageService? adminContentStorageService,
+    RecordingUploadService? recordingUploadService,
   }) : _configStorageService = configStorageService ?? ConfigStorageService(),
        _logStorageService = logStorageService ?? BroadcastLogStorageService(),
        _microphonePermissionService =
@@ -45,7 +48,9 @@ class BroadcasterProvider extends ChangeNotifier {
            nativeBroadcastService ?? NativeBroadcastService(),
        _networkInfoService = networkInfoService ?? NetworkInfoService(),
        _adminContentStorageService =
-           adminContentStorageService ?? AdminContentStorageService() {
+           adminContentStorageService ?? AdminContentStorageService(),
+       _recordingUploadService =
+           recordingUploadService ?? RecordingUploadService() {
     _nativeStatusSubscription = _nativeBroadcastService.statusStream.listen(
       _handleNativeStatus,
       onError: (_) {},
@@ -72,6 +77,7 @@ class BroadcasterProvider extends ChangeNotifier {
   final NativeBroadcastService _nativeBroadcastService;
   final NetworkInfoService _networkInfoService;
   final AdminContentStorageService _adminContentStorageService;
+  final RecordingUploadService _recordingUploadService;
   final _random = Random(12);
 
   Timer? _timer;
@@ -114,6 +120,7 @@ class BroadcasterProvider extends ChangeNotifier {
   bool isTestRecording = false;
   TestRecordingResult? testRecording;
   List<BroadcastLog> logs = [];
+  List<RecordingUpload> recordingUploads = [];
   AdminContent adminContent = const AdminContent();
   bool hasAdminPin = false;
   bool isAdminUnlocked = false;
@@ -174,12 +181,14 @@ class BroadcasterProvider extends ChangeNotifier {
     final loadedNetwork = await _networkInfoService.getNetworkType();
     final loadedAdminContent = await _adminContentStorageService.loadContent();
     final loadedHasAdminPin = await _adminContentStorageService.hasAdminPin();
+    final loadedRecordingUploads = await _recordingUploadService.loadQueue();
 
     config = loadedConfig;
     logs = loadedLogs;
     networkType = loadedNetwork;
     adminContent = loadedAdminContent;
     hasAdminPin = loadedHasAdminPin;
+    recordingUploads = loadedRecordingUploads;
     final nativeStatus = await _nativeBroadcastService.getServiceStatus();
     if (nativeStatus != null && nativeStatus != ConnectionStatus.offline) {
       status = nativeStatus;
@@ -198,6 +207,31 @@ class BroadcasterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+
+
+  Future<void> enqueueRecordingUpload(BroadcastLog log) async {
+    if (log.recordingFilePath.isEmpty || log.recordingBytes <= 0) return;
+    final item = RecordingUpload(
+      id: log.id,
+      filePath: log.recordingFilePath,
+      title: log.kajianTitle.isEmpty ? 'Kajian ${log.startedAt.toIso8601String()}' : log.kajianTitle,
+      theme: log.kajianTheme,
+      ustadz: log.ustadzName,
+      recordedAt: log.startedAt,
+      durationSeconds: log.durationSeconds,
+      fileBytes: log.recordingBytes,
+    );
+    recordingUploads = [item, ...recordingUploads.where((old) => old.id != item.id)];
+    await _recordingUploadService.saveQueue(recordingUploads);
+    notifyListeners();
+  }
+
+  Future<void> markRecordingUploadReady(RecordingUpload item) async {
+    final updated = await _recordingUploadService.markUploadPlaceholder(item);
+    recordingUploads = recordingUploads.map((old) => old.id == item.id ? updated : old).toList();
+    await _recordingUploadService.saveQueue(recordingUploads);
+    notifyListeners();
+  }
 
   Future<void> saveAdminContent(AdminContent content) async {
     adminContent = content;
@@ -669,6 +703,7 @@ class BroadcasterProvider extends ChangeNotifier {
     );
     logs = [log, ...logs];
     await _logStorageService.saveLogs(logs);
+    await enqueueRecordingUpload(log);
     notifyListeners();
   }
 

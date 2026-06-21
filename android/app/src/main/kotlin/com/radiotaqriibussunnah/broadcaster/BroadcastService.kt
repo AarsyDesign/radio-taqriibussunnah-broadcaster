@@ -472,7 +472,7 @@ class BroadcastService : Service() {
 
     private fun startAudioRecording() {
         val musicDir = getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: filesDir
-        val recordingsDir = java.io.File(musicDir, "recordings")
+        val recordingsDir = java.io.File(musicDir, "RadioTaqriibussunnah/Recordings")
         val recorder = AudioRecorder(recordingsDir, SAMPLE_RATE)
         audioRecorder = if (runCatching { recorder.start() }.isSuccess) {
             recordingFilePath = recorder.recordingFile?.absolutePath.orEmpty()

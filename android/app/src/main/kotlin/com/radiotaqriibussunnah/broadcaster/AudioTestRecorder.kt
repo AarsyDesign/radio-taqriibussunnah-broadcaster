@@ -104,7 +104,7 @@ class AudioTestRecorder(private val context: Context) {
 
         val musicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
             ?: context.filesDir
-        val recorder = AudioRecorder(File(musicDir, "test-recordings"), SAMPLE_RATE)
+        val recorder = AudioRecorder(File(musicDir, "RadioTaqriibussunnah/TestRecordings"), SAMPLE_RATE)
         val audioProcessor = AudioProcessor(SAMPLE_RATE, audioProcessingConfig)
         var noiseSuppressor: NoiseSuppressor? = null
         val startedAt = System.currentTimeMillis()
